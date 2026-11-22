@@ -68,8 +68,44 @@ def registry_check(c: Candidate, spec: Spec, cfg: Config, regs: Registries, toda
         Role.UNKNOWN, [], flags, None
 
 
+def apply_company_context(a: Assessment, c: Candidate, ctx: Optional[dict], ig: GateResult, cfg: Config) -> GateResult:
+    """Crustdata = company context only. It can corroborate or contradict identity and add a trader signal.
+    It never touches legal_approval and never proves capability."""
+    if not ctx:
+        return ig
+    a.company_context = {k: v for k, v in ctx.items() if v not in (None, "", [])}
+    if not ctx.get("matched"):
+        ig.reason += " (Crustdata: no company record.)"
+        return ig
+    cn = norm_company(ctx.get("name") or "")
+    names = {norm_company(c.company)} | {norm_company(h.company) for h in a.registry_hits} \
+        | {norm_company(h.brand) for h in a.registry_hits if h.brand}
+    names.discard("")
+    same = cn and any(cn == n or cn in n or n in cn for n in names)
+    by_domain = str(ctx.get("lookup", "")).startswith("domains:")
+    src = f"Crustdata company record ({ctx.get('lookup')}, context only)"
+    if cn and not same and by_domain:
+        a.flags.append(f"Identity conflict: Crustdata says {c.domain} belongs to '{ctx.get('name')}', not '{c.company}'.")
+        return GateResult(gate="entity_identity", value=GV.UNKNOWN, source=src,
+                          reason=f"Domain owner per Crustdata is '{ctx.get('name')}'; conflicts with candidate name.")
+    if same and ig.value == GV.UNKNOWN and by_domain and a.registry_hits \
+            and not any("impersonation" in f for f in a.flags):
+        ig = GateResult(gate="entity_identity", value=GV.PASS, source=src,
+                        reason=f"Registry entity matches the domain owner per Crustdata ({ctx.get('name')}, HQ {ctx.get('hq') or 'n/a'}).")
+    elif same:
+        ig.reason += f" Corroborated by Crustdata ({ctx.get('name')})."
+    hc = ctx.get("headcount")
+    tmax = int(cfg.limits.get("crustdata", {}).get("trader_headcount_max", 20))
+    if hc is not None and hc <= tmax and "manufactur" in (c.listing_role or "").lower() and a.role != Role.MAKER:
+        a.flags.append(f"Trader-credibility signal: ~{hc} employees per Crustdata while claiming to manufacture (signal only).")
+    country = (ctx.get("country") or "").lower()
+    if country and country not in ("india", "ind", "in") and any(INDIA_RE.search(h.address) for h in a.registry_hits):
+        a.flags.append(f"Context note: Crustdata HQ country '{ctx.get('country')}' differs from Indian registry address.")
+    return ig
+
+
 def assess(c: Candidate, spec: Spec, cfg: Config, regs: Registries, store: Store, today: date,
-           llm=None) -> Assessment:
+           llm=None, context: Optional[dict] = None) -> Assessment:
     a = Assessment(candidate_id=c.candidate_id, company=c.company, model=c.model)
     lane = cfg.lanes[spec.lane]
     gcfg = cfg.gates
@@ -116,6 +152,7 @@ def assess(c: Candidate, spec: Spec, cfg: Config, regs: Registries, store: Store
         a.missing_evidence.append("official site page")
     else:
         ig = GateResult(gate="entity_identity", value=GV.UNKNOWN, reason="No registry record to match against.")
+    ig = apply_company_context(a, c, context, ig, cfg)
 
     # 5. spec match: verbatim passages only
     fields = lane.get("required_fields", {})
@@ -177,7 +214,7 @@ def decide(a: Assessment, spec: Spec, cfg: Config) -> Decision:
     g = {x.gate: x.value for x in a.gates}
     needs_maker = cfg.priorities.get("buyer_requires_maker", True)
     legal = g.get("legal_approval")
-    if any("impersonation" in f for f in a.flags):
+    if any("impersonation" in f or f.startswith("Identity conflict") for f in a.flags):
         return Decision.HOLD_FOR_REVIEW
     if legal == GV.FAIL or g.get("supplier_role") == GV.FAIL or g.get("spec_match") == GV.FAIL \
             or g.get("entity_identity") == GV.FAIL:

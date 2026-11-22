@@ -9,6 +9,7 @@ from typing import Callable, Optional
 from . import rfq as R
 from .adapters import discover, distributor_offers
 from .config import Config
+from .crustdata import Crustdata
 from .gates import apply_quote, assess, rank
 from .llm import LLM
 from .models import Assessment, Decision, JobState, Quote
@@ -33,11 +34,13 @@ def file_sender(store: Store) -> Callable[[dict], None]:
 
 class Job:
     def __init__(self, job_id: str, cfg: Optional[Config] = None, today: Optional[date] = None,
-                 sender: Optional[Callable[[dict], None]] = None, crash_at: Optional[str] = None):
+                 sender: Optional[Callable[[dict], None]] = None, crash_at: Optional[str] = None,
+                 crust_post: Optional[Callable] = None):
         self.cfg = cfg or Config.load()
         self.store = Store(self.cfg.jobs_dir, job_id)
         self.regs = Registries(self.cfg.data_dir)
         self.llm = LLM(self.cfg.limits, self.store)
+        self.crust = Crustdata(self.cfg.limits, self.store, self.cfg.jobs_dir / "_cache", post=crust_post)
         self.today = today or date.today()
         self.sender = sender or file_sender(self.store)
         self.crash_at = crash_at or os.environ.get("SS_KILL_AFTER")
@@ -84,8 +87,12 @@ class Job:
 
     def _s_assess(self, *_) -> bool:
         llm = self._llm()
-        self.state.assessments = rank([assess(c, self.state.spec, self.cfg, self.regs, self.store, self.today, llm)
-                                       for c in self.state.candidates], self.cfg)
+        if "crustdata" not in self.state.extra:  # paid call: once per job, checkpointed, then cached across jobs
+            self.state.extra["crustdata"] = self.crust.enrich(self.state.candidates)
+            self.store.checkpoint(self.state)
+        ctx = self.state.extra["crustdata"]
+        self.state.assessments = rank([assess(c, self.state.spec, self.cfg, self.regs, self.store, self.today, llm,
+                                              ctx.get(c.candidate_id)) for c in self.state.candidates], self.cfg)
         self._commit("assess")
         return True
 

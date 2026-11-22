@@ -9,6 +9,14 @@ llm:
   inr_per_mtok_in: 340     # ~USD 4 / MTok at ~85 INR/USD
   inr_per_mtok_out: 1700   # ~USD 20 / MTok
 max_inr_per_job: 50
+crustdata:                 # company context only (identity, HQ, headcount, trader signal) - never approval evidence
+  enabled: auto            # auto = only if CRUSTDATA_API_KEY is set (in .env); false = never
+  fields: [basic_info, locations, headcount]
+  max_records_per_job: 12  # 2 credits per record per Crustdata docs -> <= 24 credits/job
+  cache_days: 30           # repeat lookups of the same company are free
+  inr_per_credit: 0        # set to your plan's rate to see INR in the ledger
+  trader_headcount_max: 20
+  timeout_s: 20
 fetch:
   timeout_s: 15
   max_pages_per_candidate: 2

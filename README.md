@@ -53,6 +53,18 @@ All rows in `data/registries/*.csv` and `data/fixtures/*` are **fictional TEST_F
 3. Component lane: set `MOUSER_API_KEY` for live distributor stock and price. Without it, the fixture is used and labelled TEST_FIXTURE.
 4. Set `mode: live` in `config/limits.yaml`.
 
+## API keys (never committed)
+
+Copy `.env.example` to `.env` and paste your keys there. `.env` is gitignored, and keys are never written to logs, the ledger or checkpoints.
+
+| Key | Enables | Without it |
+|---|---|---|
+| `CRUSTDATA_API_KEY` | Company context: who owns the domain, HQ, headcount, year founded. It can corroborate identity, raise an identity conflict (which sends the candidate to HOLD_FOR_REVIEW), or add a trader-credibility signal. **Never evidence of approval or capability.** | Identity comes from the registry and the site only |
+| `ANTHROPIC_API_KEY` | Claude fallback for routing and spec extraction | Rules only (free) |
+| `MOUSER_API_KEY` | Live distributor stock and price | Fixture prices |
+
+Crustdata uses `POST /company/enrich` (API version `2025-11-01`). All candidates go in **one batched request** per job (up to 25). Results are checkpointed and cached for 30 days, so a restart or a repeat lookup costs no credits. A job can use at most `max_records_per_job` × 2 credits. Credits are logged in the cost ledger.
+
 ## Cost controls
 
 - The deterministic path (routing, registry match, regex claim extraction, gates, ranking) makes **zero paid calls**. A test asserts this.

@@ -3,3 +3,6 @@ __pycache__/
 .pytest_cache/
 jobs/
 .env
+.env.*
+!.env.example
+data/cache/

@@ -155,6 +155,7 @@ class Assessment(_M):
     registry_hits: list[RegistryHit] = Field(default_factory=list)
     flags: list[str] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)
+    company_context: dict[str, Any] = Field(default_factory=dict)  # Crustdata context; never approval evidence
     quote: Optional[Quote] = None
     rank: Optional[int] = None
     tied_with: list[str] = Field(default_factory=list)

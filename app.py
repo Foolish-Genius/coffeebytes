@@ -24,6 +24,7 @@ with st.sidebar:
     llm_on = bool(os.environ.get("ANTHROPIC_API_KEY"))
     st.write(("🟢 Claude API connected" if llm_on else "⚪ Claude API not set (free rules-only mode)")
              + f" · cap ₹{cfg.limits.get('max_inr_per_job')}/job")
+    st.write("🟢 Crustdata company context" if os.environ.get("CRUSTDATA_API_KEY") else "⚪ Crustdata not set (no company context)")
     st.write("🟢 Mouser live prices" if os.environ.get("MOUSER_API_KEY") else "⚪ Mouser not set (fixture prices)")
     st.caption("Keys go in the .env file in the project folder (see .env.example). Restart the app after editing.")
 
@@ -54,6 +55,12 @@ for c in out["candidates"]:
     with st.expander(head):
         for f in c["flags"]:
             st.warning(f)
+        cc = c.get("company_context") or {}
+        if cc.get("matched"):
+            st.caption("Crustdata context (not approval evidence): " + " · ".join(
+                f"{k}: {cc[k]}" for k in ("name", "primary_domain", "hq", "country", "headcount", "employee_count_range", "year_founded") if cc.get(k)))
+        elif cc:
+            st.caption("Crustdata: no company record found.")
         if c["maker_of_record"] and c["role"] != "MAKER":
             st.write(f"Maker of record: **{c['maker_of_record']}** (recorded separately)")
         for g in c["gates"]:
