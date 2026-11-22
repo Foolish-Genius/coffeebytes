@@ -169,7 +169,7 @@ def apply_company_context(a: Assessment, c: Candidate, ctx: Optional[dict], ig: 
 
 
 def assess(c: Candidate, spec: Spec, cfg: Config, regs: Registries, store: Store, today: date,
-           llm=None, context: Optional[dict] = None) -> Assessment:
+           llm=None, context: Optional[dict] = None, extra_fields: Optional[dict] = None) -> Assessment:
     a = Assessment(candidate_id=c.candidate_id, company=c.company, model=c.model)
     lane = cfg.lanes[spec.lane]
     gcfg = cfg.gates
@@ -226,7 +226,7 @@ def assess(c: Candidate, spec: Spec, cfg: Config, regs: Registries, store: Store
     ig = apply_company_context(a, c, context, ig, cfg)
 
     # 5. spec match: verbatim passages only
-    fields = lane.get("required_fields", {})
+    fields = {**lane.get("required_fields", {}), **(extra_fields or {})}  # follow-ups add/tighten fields
     claims = [verify_claim(cl, c.pages) for cl in c.claims]
     for cl in claims:
         if not cl.verified:

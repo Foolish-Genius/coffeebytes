@@ -136,6 +136,17 @@ with st.form("quote"):
                        "delivery_days": days or None, "warranty_months": warranty or None})
         st.rerun()
 
+st.subheader("Ask / follow up")
+for q in out.get("questions", []):
+    st.warning(q)
+for m in out.get("thread", []):
+    with st.chat_message(m["role"]):
+        st.text(m["text"])
+msg = st.chat_input("e.g. '500 units', 'deliver to Chennai', 'require IP67', 'why Orbitrack?', 'proceed'")
+if msg:
+    job.follow_up(msg)
+    st.rerun()
+
 st.subheader("Cost ledger")
 st.write(out["cost"])
 with st.expander("Audit log"):
