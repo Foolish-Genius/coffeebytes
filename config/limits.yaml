@@ -9,6 +9,8 @@ llm:
   inr_per_mtok_in: 340     # ~USD 4 / MTok at ~85 INR/USD
   inr_per_mtok_out: 1700   # ~USD 20 / MTok
 max_inr_per_job: 50
+max_job_seconds: 900       # R9: after this, optional slow/paid calls (LLM, Crustdata, page fetch) are skipped and
+                           # logged; the deterministic pipeline still finishes. Clock starts at the job's first run.
 crustdata:                 # company context only (identity, HQ, headcount, trader signal) - never approval evidence
   enabled: auto            # auto = only if CRUSTDATA_API_KEY is set (in .env); false = never
   allow_spend: true        # false = no network call, dry-run plan + credit estimate only

@@ -17,21 +17,30 @@ from .store import Store, now
 
 
 def discover(spec: Spec, cfg: Config, store: Store, source: str = "fixture",
-             candidates_file: Optional[Path] = None) -> list[Candidate]:
+             candidates_file: Optional[Path] = None, deadline: Optional[float] = None) -> list[Candidate]:
     """source = fixture | file | registry.
     file: JSON list of {company, domain, model, email, urls[]} from a live search; pages are fetched and stored.
     registry: seeds candidates from the lane's approval lists themselves (free, authoritative), no pages yet."""
     lim = cfg.limits.get("discovery", {})
     out: list[Candidate] = []
+    if source == "fixture" and cfg.limits.get("mode") == "live":  # R5
+        raise ValueError("mode: live refuses fixture candidates; use --source file or --source registry.")
     if source == "fixture":
         f = cfg.data_dir / "fixtures" / f"candidates_{spec.lane}.json"
         if f.exists():
             out = [Candidate(**c) for c in json.loads(f.read_text(encoding="utf-8"))["candidates"]]
+            loaded = f"{now()} (TEST_FIXTURE page, loaded not fetched)"
+            for c in out:  # R4: every page carries a date; fixture pages say so honestly
+                for p in c.pages:
+                    p.fetched_at = p.fetched_at or loaded
     elif source == "file" and candidates_file:
         fcfg = cfg.limits.get("fetch", {})
         for i, c in enumerate(json.loads(Path(candidates_file).read_text(encoding="utf-8"))):
             pages = []
             for u in c.get("urls", [])[: int(fcfg.get("max_pages_per_candidate", 2))]:
+                if deadline and time.time() > deadline:  # R9
+                    store.audit("time_limit_skipped", op="fetch", url=u)
+                    continue
                 p = fetch(u, store, int(fcfg.get("timeout_s", 15)), fcfg.get("user_agent", "SiliconScout"))
                 if p:
                     pages.append(p)
@@ -88,6 +97,9 @@ def distributor_offers(mpn: str, cfg: Config, store: Store) -> tuple[Optional[di
     if live:
         live["fetched_at"] = now()
         return live, "DISTRIBUTOR_LIVE"
+    if cfg.limits.get("mode") == "live":  # R5: no fixture prices in a live run
+        store.audit("distributor_fixture_refused", mpn=mpn)
+        return None, "DISTRIBUTOR_LIVE"
     f = cfg.data_dir / "fixtures" / "distributor_offers.json"
     parts = json.loads(f.read_text(encoding="utf-8")).get("parts", {}) if f.exists() else {}
     part = parts.get(mpn.upper())

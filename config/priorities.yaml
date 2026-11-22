@@ -1,4 +1,6 @@
 # Buyer preferences. Order qualified candidates by these keys, in order. Price never overrides a gate.
 buyer_requires_maker: true
-allowed_roles: [MAKER, BRAND_OWNER]     # TRADER allowed only if you add it here
+allowed_roles: [MAKER, BRAND_OWNER, AUTHORIZED_DISTRIBUTOR]   # TRADER allowed only if you add it here
+                                        # (an authorized distributor keeps the maker's warranty; remove it to buy direct only)
 priority_order: [delivery_days, warranty_months, service_network, unit_price]
+long_lead_time_days: 84   # quotes at/over this lead time get a "lock price / plan buffer" flag (inflation risk)

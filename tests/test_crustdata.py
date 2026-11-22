@@ -216,6 +216,15 @@ def test_trader_signal_from_size_range(cfg):
     assert any("Trader-credibility signal: <= 10 employees (1-10)" in f for f in a.flags)
 
 
+def test_time_limit_skips_paid_calls_but_job_finishes(cfg):  # R9
+    cfg.limits = {**cfg.limits, "max_job_seconds": 0}
+    api = FakeAPI()
+    job = run(cfg, api, "slow", spend=True)
+    assert api.calls == []
+    assert any(r["event"] == "time_limit_skipped" and r["detail"]["op"] == "crustdata" for r in job.store.audit_rows())
+    assert to_output(job)["status"] == "AWAITING_APPROVAL"  # deterministic pipeline still completes
+
+
 def test_no_key_no_call(tmp_path, monkeypatch):
     monkeypatch.delenv("CRUSTDATA_API_KEY", raising=False)
     api = FakeAPI()

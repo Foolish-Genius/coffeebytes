@@ -9,6 +9,14 @@ from siliconscout.config import Config
 from siliconscout.output import to_output
 from siliconscout.pipeline import Job
 
+def safe(text: str) -> str:
+    """Fixture URLs/emails (.example/.test) are not real: show them as plain code, never as dead links."""
+    import re
+    if re.search(r"\.(example|test)\b", text or ""):
+        return f"`{text}` (fixture, not a real address)"
+    return text
+
+
 ICON = {"PASS": "🟢", "CONFIRMED": "🟢", "PARTIAL": "🟡", "UNKNOWN": "⚪", "TO_CONFIRM": "⚪", "FAIL": "🔴", "N/A": "▫️"}
 
 st.set_page_config(page_title="SiliconScout 3.0", layout="wide")
@@ -54,6 +62,10 @@ c1.markdown(f"**Lane:** {out['lane']}  \n**Device:** {spec.get('device')}  \n**Q
             f"**Deliver to:** {spec.get('delivery_location') or 'UNKNOWN'}  \n**MPN:** {spec.get('mpn') or '-'}")
 c2.markdown("**Requirements:** " + ", ".join(spec.get("requirements", {}).values()) +
             "\n\n**Assumptions:**\n" + "\n".join(f"- {a}" for a in spec.get("assumptions", [])))
+if spec.get("compliance_checks"):
+    with st.expander(f"ET compliance checks for this lane ({len(spec['compliance_checks'])})"):
+        for c in spec["compliance_checks"]:
+            st.markdown(f"- {c}")
 
 plan = out.get("crustdata_plan")
 if plan:
@@ -94,7 +106,7 @@ for c in out["candidates"]:
         for g in c["gates"]:
             st.markdown(f"{ICON.get(g['value'], '')} `{g['gate']}` **{g['value']}** — {g['reason']}")
             if g.get("source"):
-                st.caption(f"source: {g['source']}")
+                st.caption(f"source: {safe(g['source'])}" + (f" · dated {g['date']}" if g.get("date") else ""))
             if g.get("passage"):
                 st.caption(f"verbatim: “{g['passage']}”")
         if c["quote"]:
@@ -103,7 +115,7 @@ for c in out["candidates"]:
 if out["rfqs"]:
     st.subheader("RFQs")
     for r in out["rfqs"]:
-        with st.expander(f"{r['rfq_id']} → {r['to']} · {r['status']}"):
+        with st.expander(f"{r['rfq_id']} → {safe(r['to'])} · {r['status']}"):
             st.code(r["body"])
     if any(r["status"] == "DRAFT" for r in out["rfqs"]) and st.button("Approve all drafts and send"):
         job.approve("all", by="workbench")

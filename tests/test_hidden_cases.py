@@ -74,8 +74,26 @@ def test_lookalike_names_kept_separate(cfg):
     job = run(cfg)
     real, fake = by_id(job, "c04"), by_id(job, "c05")
     assert g(real, "legal_approval") == GV.PASS
-    assert g(fake, "legal_approval") == GV.FAIL and fake.decision in (Decision.HOLD_FOR_REVIEW, Decision.NOT_A_FIT)
-    assert fake.maker_of_record is None
+    # R3: one letter off the registered name with the same model is ambiguous -> HOLD, never PASS, never merged
+    assert g(fake, "legal_approval") != GV.PASS and fake.decision == Decision.HOLD_FOR_REVIEW
+    assert fake.maker_of_record is None and any(f.startswith("Ambiguous registry match") for f in fake.flags)
+
+
+# R3: ambiguous model-number format -> HOLD_FOR_REVIEW, not FAIL; a clear absence still FAILs
+def test_ambiguous_model_match_holds(cfg):
+    from siliconscout.gates import assess
+    from siliconscout.models import Candidate, Page
+    from siliconscout.registry import Registries
+    job = run(cfg, job_id="amb")
+    spec = job.state.spec
+    page = Page(url="https://navyug-telematics.example/x", text="Navyug Telematics Pvt Ltd makes the NVT-140 in Pune, India.")
+    near = Candidate(candidate_id="z1", company="Navyug Telematics Pvt Ltd", model="NVT-140", pages=[page])
+    far = Candidate(candidate_id="z2", company="Navyug Telematics Pvt Ltd", model="QX-9", pages=[page])
+    a1 = assess(near, spec, cfg, Registries(cfg.data_dir), job.store, TODAY)
+    a2 = assess(far, spec, cfg, Registries(cfg.data_dir), job.store, TODAY)
+    assert a1.decision == Decision.HOLD_FOR_REVIEW and g(a1, "legal_approval") == GV.UNKNOWN
+    assert "NVT-140X" in a1.gate("legal_approval").reason and a1.gate("legal_approval").date == "2026-07-16"
+    assert a2.decision == Decision.NOT_A_FIT and g(a2, "legal_approval") == GV.FAIL
 
 
 # 5. Expired approval
@@ -130,6 +148,27 @@ def test_real_quote_enables_order_and_unknowns_stay_unknown(cfg):
     assert by_id(job, "c01").decision == Decision.RECOMMEND_ORDER
     view = to_output(job)["candidates"][0]["quote"]
     assert view["goods_value"] == 2235000 and view["freight"] == "UNKNOWN" and view["gst_pct"] == "UNKNOWN"
+
+
+def test_inflation_and_lead_time_flags_never_fail(cfg):  # R6 + inflation
+    job = run(cfg, job_id="infl")
+    job.add_quote({"candidate_id": "c01", "label": "SUPPLIER_QUOTE", "unit_price": 7450, "quantity": 300,
+                   "delivery_days": 180, "validity_until": "2026-12-31", "received_at": "2026-11-22"})
+    a = by_id(job, "c01")
+    assert any(f.startswith("Long lead time: 180 days") for f in a.flags)
+    assert any(f.startswith("Price-escalation risk") for f in a.flags)
+    assert a.decision == Decision.RECOMMEND_ORDER  # a signal for the buyer, never a failure gate
+    job.add_quote({"candidate_id": "c01", "label": "SUPPLIER_QUOTE", "unit_price": 7450, "quantity": 300,
+                   "delivery_days": 180, "validity_until": "2026-12-31", "received_at": "2026-11-22",
+                   "escalation_clause": "fixed to delivery"})
+    assert not any(f.startswith("Price-escalation risk") for f in by_id(job, "c01").flags)
+
+
+def test_et_compliance_checks_in_spec_and_rfq(cfg):
+    job = run(cfg, job_id="comp")
+    assert any("AIS-140" in c for c in job.state.spec.compliance_checks)
+    assert any("WPC" in c for c in job.state.spec.compliance_checks)
+    assert "compliance documents" in job.state.rfqs[0].body and "escalation clause" in job.state.rfqs[0].body
 
 
 def test_budgetary_price_never_supports_order(cfg):
@@ -220,6 +259,61 @@ def test_generic_lane_fallback(cfg):
     job = run(cfg, "Need 40 smart coffee machines for the Delhi office", "g1")
     assert job.state.spec.lane == "GENERIC"
     assert any("no government registry" in s.lower() for s in job.state.spec.assumptions)
+
+
+def test_authorized_distributor_in_device_lane(cfg):  # R2
+    from siliconscout.gates import assess
+    from siliconscout.models import Candidate, Page, Role
+    from siliconscout.registry import Registries
+    job = run(cfg, job_id="ad")
+    page = Page(url="https://fleetline.example/", fetched_at="2026-11-22",
+                text="Fleetline Systems Pvt Ltd supplies the NVT-140X across India as an authorised partner of Navyug Telematics Pvt Ltd.")
+    a = assess(Candidate(candidate_id="d1", company="Fleetline Systems Pvt Ltd", model="NVT-140X", pages=[page]),
+               job.state.spec, cfg, Registries(cfg.data_dir), job.store, TODAY)
+    assert a.role == Role.AUTHORIZED_DISTRIBUTOR and a.maker_of_record == "Navyug Telematics Pvt Ltd"
+    assert g(a, "legal_approval") == GV.PASS and g(a, "supplier_role") == GV.PASS
+    # an unknown reseller of the same model is NOT an authorized distributor
+    b = assess(Candidate(candidate_id="d2", company="Random Resellers", model="NVT-140X",
+                         pages=[Page(url="https://rr.example/", text="We resell NVT-140X trackers in India.")]),
+               job.state.spec, cfg, Registries(cfg.data_dir), job.store, TODAY)
+    assert b.role != Role.AUTHORIZED_DISTRIBUTOR and b.decision in (Decision.NOT_A_FIT, Decision.HOLD_FOR_REVIEW)
+
+
+def test_every_pass_has_source_passage_and_date(cfg):  # R4
+    from siliconscout.evidence import normalize
+    job = run(cfg, job_id="r4")
+    pages = {p.url: p.text for c in job.state.candidates for p in c.pages}
+    checked = 0
+    for a in job.state.assessments:
+        for gr in a.gates:
+            if gr.value != GV.PASS or gr.source.startswith("derived"):
+                continue
+            assert gr.source and gr.date, (a.company, gr.gate)
+            assert gr.passage, (a.company, gr.gate)
+            if gr.source in pages:  # page-backed passages must be verbatim in the stored page
+                assert normalize(gr.passage) in normalize(pages[gr.source]), (a.company, gr.gate)
+            checked += 1
+    assert checked > 30
+
+
+def test_live_mode_never_uses_test_fixtures(cfg):  # R5
+    cfg.limits = {**cfg.limits, "mode": "live"}
+    with pytest.raises(ValueError, match="refuses fixture candidates"):
+        run(cfg, job_id="live1")
+    # fixture registry can't settle approval in a live run -> CANNOT_VERIFY, never PASS
+    from siliconscout.gates import assess
+    from siliconscout.models import Candidate
+    from siliconscout.registry import Registries
+    demo = run(Config.load(jobs_dir=cfg.jobs_dir), job_id="spec-only")
+    a = assess(Candidate(candidate_id="x", company="Navyug Telematics Pvt Ltd", model="NVT-140X"),
+               demo.state.spec, cfg, Registries(cfg.data_dir), demo.store, TODAY)
+    assert g(a, "legal_approval") == GV.UNKNOWN and a.decision == Decision.CANNOT_VERIFY
+    parts = Job("live3", cfg, today=TODAY)
+    parts.run("Need 500 pcs of part number FSC-MCU100A")
+    assert parts.state.assessments == [] and to_output(parts)["status"] == "CANNOT_VERIFY"
+    parts.state.assessments = [by_id(demo, "c01")]
+    with pytest.raises(ValueError, match="TEST_FIXTURE"):
+        parts.add_quote({"candidate_id": "c01", "label": "TEST_FIXTURE", "unit_price": 1})
 
 
 def test_no_paid_calls_on_deterministic_path(cfg):

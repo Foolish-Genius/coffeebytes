@@ -11,6 +11,14 @@ lanes:
     registries: [arai_ais140, icat_ais140]
     registry_rule: any          # either list passes
     legal_required: true
+    # ET regulatory checks beyond the hard registry gate. Shown in the spec and asked for in every RFQ.
+    # Status is "to confirm": applicability depends on the exact device, so a person confirms before PO.
+    compliance_checks:
+      - "AIS-140 type approval (ARAI or ICAT) for the exact model - hard gate, checked against the registry"
+      - "Integration with the state's VLT/emergency-response backend where the vehicles are registered - ask supplier"
+      - "TEC MTCTE certificate if the device's telecom category is notified - confirm applicability"
+      - "WPC Equipment Type Approval for any short-range radio inside (BLE/Wi-Fi) - confirm"
+      - "E-waste EPR registration with CPCB for the producer/importer - ask supplier"
     assumptions:
       - "Vehicles are Indian-registered commercial vehicles, so an AIS-140 approved VLTD is legally required (MoRTH)."
       - "One tracking device per vehicle."
@@ -28,6 +36,10 @@ lanes:
     registries: []              # BIS CRS notification to be confirmed at kickoff; until then no registry gate
     registry_rule: any
     legal_required: false
+    compliance_checks:
+      - "WPC Equipment Type Approval for RFID readers (865-867 MHz) and BLE/Wi-Fi handhelds - confirm"
+      - "BIS CRS registration if the product category is notified - confirm at kickoff"
+      - "E-waste EPR registration with CPCB for the producer/importer - ask supplier"
     assumptions:
       - "CRS notification status for this category is unconfirmed; treated as no registry gate until checked."
     required_fields:
@@ -41,6 +53,10 @@ lanes:
     registries: []
     registry_rule: any
     legal_required: false
+    compliance_checks:
+      - "Calibration certificate traceable to an NABL-accredited lab, with its validity date"
+      - "WPC Equipment Type Approval if the logger has a radio (BLE/Wi-Fi/LoRa) - confirm"
+      - "E-waste EPR registration with CPCB for the producer/importer - ask supplier"
     assumptions:
       - "No mandatory registry assumed; calibration certificate required as evidence."
     required_fields:
@@ -54,6 +70,9 @@ lanes:
     registries: []
     registry_rule: any
     legal_required: false
+    compliance_checks:
+      - "Authorized channel only (counterfeit avoidance): certificate of conformance and date code per lot"
+      - "RoHS declaration if the finished product ships to the EU"
     assumptions:
       - "Exact manufacturer part number is binding; no alternates."
       - "Buy only from the manufacturer's authorized distributors."

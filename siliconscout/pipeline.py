@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import date
 from pathlib import Path
 from typing import Callable, Optional
@@ -46,6 +47,9 @@ class Job:
         self.sender = sender or file_sender(self.store)
         self.crash_at = crash_at or os.environ.get("SS_KILL_AFTER")
         self.state = self.store.latest() or JobState(job_id=job_id)
+        self.state.extra.setdefault("started_at", time.time())
+        self.deadline = self.state.extra["started_at"] + float(self.cfg.limits.get("max_job_seconds", 900))
+        self.llm.deadline = self.crust.deadline = self.deadline
 
     # -- helpers -------------------------------------------------------------------------------
     def _done(self, stage: str) -> bool:
@@ -82,7 +86,7 @@ class Job:
         return st
 
     def _s_discover(self, source, cfile) -> bool:
-        self.state.candidates = discover(self.state.spec, self.cfg, self.store, source, cfile)
+        self.state.candidates = discover(self.state.spec, self.cfg, self.store, source, cfile, deadline=self.deadline)
         self._commit("discover")
         return True
 

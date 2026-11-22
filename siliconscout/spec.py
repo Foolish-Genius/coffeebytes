@@ -78,4 +78,5 @@ def translate(need: str, cfg: Config, llm: Optional[LLM] = None) -> Spec:
     reqs = {k: v["label"] for k, v in lc.get("required_fields", {}).items()}
     return Spec(raw_need=need, lane=lane, device=lc["device"], quantity=qty, unit=unit,
                 delivery_location=loc, mpn=mpn if lane == "D_COMPONENT" else None,
-                requirements=reqs, assumptions=assumptions, source=source)
+                requirements=reqs, assumptions=assumptions, source=source,
+                compliance_checks=list(lc.get("compliance_checks", [])))

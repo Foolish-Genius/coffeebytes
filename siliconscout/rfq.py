@@ -12,7 +12,9 @@ from .store import now
 
 DEVICE_FIELDS = ["unit price", "quantity and MOQ", "approval certificate / TAC number for the quoted model",
                  "warranty term", "installation and service network", "SIM / data plan terms", "firmware updates",
-                 "delivery date", "payment terms", "quote validity", "GST", "freight"]
+                 "delivery date and lead time in weeks from PO", "payment terms",
+                 "quote validity - please hold the price until delivery, or state the escalation clause (index, cap)",
+                 "GST", "freight"]
 
 
 def can_rfq(a: Assessment) -> bool:
@@ -32,6 +34,9 @@ def draft(job_id: str, a: Assessment, email: str, spec: Spec) -> RFQ:
     ]
     if to_confirm:
         lines += ["", "Please also confirm, with a datasheet reference:", *[f"- {f}" for f in to_confirm]]
+    if spec.compliance_checks:
+        lines += ["", "Please attach or confirm these compliance documents:",
+                  *[f"- {c.split(' - ')[0]}" for c in spec.compliance_checks]]
     lines += ["", "Please confirm you can supply this quantity and your production lead time.", "",
               "Regards,", "Procurement (via SiliconScout)"]
     body = "\n".join(lines)
