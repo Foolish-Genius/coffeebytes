@@ -58,6 +58,7 @@ class Spec(_M):
     mpn: Optional[str] = None
     requirements: dict[str, str] = Field(default_factory=dict)  # field -> label
     assumptions: list[str] = Field(default_factory=list)
+    compliance_checks: list[str] = Field(default_factory=list)  # ET regulatory checks for this lane
     source: str = "rules"  # rules | llm
 
 
@@ -109,6 +110,7 @@ class GateResult(_M):
     reason: str
     source: str = ""
     passage: str = ""
+    date: str = ""  # R4: as-on date of the registry, or fetch time of the page the passage came from
 
 
 class Quote(_M):
@@ -125,6 +127,7 @@ class Quote(_M):
     delivery_days: Optional[int] = None
     payment_terms: Optional[str] = None
     validity_until: Optional[str] = None
+    escalation_clause: Optional[str] = None  # how price may move before delivery (index, cap, none)
     gst_pct: Optional[float] = None
     freight: Optional[float] = None
     installation: Optional[float] = None

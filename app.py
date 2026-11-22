@@ -9,6 +9,14 @@ from siliconscout.config import Config
 from siliconscout.output import to_output
 from siliconscout.pipeline import Job
 
+def safe(text: str) -> str:
+    """Fixture URLs/emails (.example/.test) are not real: show them as plain code, never as dead links."""
+    import re
+    if re.search(r"\.(example|test)\b", text or ""):
+        return f"`{text}` (fixture, not a real address)"
+    return text
+
+
 ICON = {"PASS": "🟢", "CONFIRMED": "🟢", "PARTIAL": "🟡", "UNKNOWN": "⚪", "TO_CONFIRM": "⚪", "FAIL": "🔴", "N/A": "▫️"}
 
 st.set_page_config(page_title="SiliconScout 3.0", layout="wide")
@@ -37,9 +45,30 @@ with st.sidebar:
     st.caption("Keys go in the .env file in the project folder (see .env.example). Restart the app after editing.")
 
 need = st.text_area("Operating need", "Need GPS trackers for 300 trucks, deliver to Pune")
-if st.button("Run / resume", type="primary"):
+if st.button("Run", type="primary"):
+    prev = Job(job_id, cfg).state.spec if job_id else None
+    if prev is not None and prev.raw_need.strip() != need.strip():  # new prompt -> new job, never resume the old one
+        job_id = uuid.uuid4().hex[:8]
+        st.session_state["default_job"] = job_id
     st.session_state["job_id"] = job_id
-    Job(job_id, cfg).run(need, source)
+    try:
+        Job(job_id, cfg).run(need, source)
+    except Exception as e:  # show the reason instead of a silent no-op
+        st.error(f"Run failed: {e}")
+
+with st.expander("Supply-chain review: upload your purchase history (CSV)"):
+    st.caption("Columns: item, supplier, qty, unit_price, order_date [, category, manufacturer, lead_time_days]. "
+               "Rules only, no paid calls.")
+    up = st.file_uploader("Purchase history", type="csv")
+    if up is not None:
+        import csv as _csv, io as _io
+        from siliconscout.review import review as _review
+        rows = [{k.strip().lower(): (v or "").strip() for k, v in r.items() if k}
+                for r in _csv.DictReader(_io.StringIO(up.getvalue().decode("utf-8-sig")))]
+        rep = _review(rows, cfg)
+        st.write(f"{rep['lines']} lines, {rep['items']} items · high {rep['counts']['high']} · "
+                 f"medium {rep['counts']['medium']} · low {rep['counts']['low']}")
+        st.dataframe(rep["findings"], use_container_width=True)
 
 if "job_id" not in st.session_state:
     st.stop()
@@ -54,6 +83,10 @@ c1.markdown(f"**Lane:** {out['lane']}  \n**Device:** {spec.get('device')}  \n**Q
             f"**Deliver to:** {spec.get('delivery_location') or 'UNKNOWN'}  \n**MPN:** {spec.get('mpn') or '-'}")
 c2.markdown("**Requirements:** " + ", ".join(spec.get("requirements", {}).values()) +
             "\n\n**Assumptions:**\n" + "\n".join(f"- {a}" for a in spec.get("assumptions", [])))
+if spec.get("compliance_checks"):
+    with st.expander(f"ET compliance checks for this lane ({len(spec['compliance_checks'])})"):
+        for c in spec["compliance_checks"]:
+            st.markdown(f"- {c}")
 
 plan = out.get("crustdata_plan")
 if plan:
@@ -94,7 +127,7 @@ for c in out["candidates"]:
         for g in c["gates"]:
             st.markdown(f"{ICON.get(g['value'], '')} `{g['gate']}` **{g['value']}** — {g['reason']}")
             if g.get("source"):
-                st.caption(f"source: {g['source']}")
+                st.caption(f"source: {safe(g['source'])}" + (f" · dated {g['date']}" if g.get("date") else ""))
             if g.get("passage"):
                 st.caption(f"verbatim: “{g['passage']}”")
         if c["quote"]:
@@ -103,7 +136,7 @@ for c in out["candidates"]:
 if out["rfqs"]:
     st.subheader("RFQs")
     for r in out["rfqs"]:
-        with st.expander(f"{r['rfq_id']} → {r['to']} · {r['status']}"):
+        with st.expander(f"{r['rfq_id']} → {safe(r['to'])} · {r['status']}"):
             st.code(r["body"])
     if any(r["status"] == "DRAFT" for r in out["rfqs"]) and st.button("Approve all drafts and send"):
         job.approve("all", by="workbench")
@@ -123,6 +156,17 @@ with st.form("quote"):
         job.add_quote({"candidate_id": cid, "label": label, "unit_price": price or None, "quantity": qty or None,
                        "delivery_days": days or None, "warranty_months": warranty or None})
         st.rerun()
+
+st.subheader("Ask / follow up")
+for q in out.get("questions", []):
+    st.warning(q)
+for m in out.get("thread", []):
+    with st.chat_message(m["role"]):
+        st.text(m["text"])
+msg = st.chat_input("e.g. '500 units', 'deliver to Chennai', 'require IP67', 'why Orbitrack?', 'proceed'")
+if msg:
+    job.follow_up(msg)
+    st.rerun()
 
 st.subheader("Cost ledger")
 st.write(out["cost"])

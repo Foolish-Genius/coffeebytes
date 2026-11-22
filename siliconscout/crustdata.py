@@ -96,6 +96,7 @@ class Crustdata:
         self.allow_spend = bool(self.cfg.get("allow_spend", False)) if allow_spend is None else allow_spend
         self.mode = self.cfg.get("mode", "identify")
         self.last_plan: dict = {}
+        self.deadline: Optional[float] = None
 
     @property
     def key(self) -> str:
@@ -192,6 +193,9 @@ class Crustdata:
             return out
         if not self.allow_spend:
             self.store.audit("crustdata_dry_run", **{k: v for k, v in plan.items() if k != "batches"})
+            return out
+        if self.deadline and time.time() > self.deadline:  # R9 time limit
+            self.store.audit("time_limit_skipped", op="crustdata")
             return out
         reserve = float(self.cfg.get("reserve_credits", 50))
         bal = self.balance()

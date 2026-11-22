@@ -36,7 +36,12 @@ class LLM:
             return False
         return True
 
+    deadline: Optional[float] = None
+
     def _budget_ok(self) -> bool:
+        if self.deadline and time.time() > self.deadline:  # R9 time limit
+            self.store.audit("time_limit_skipped", op="llm")
+            return False
         if self.calls >= int(self.cfg.get("max_calls_per_job", 0)):
             return False
         return self.store.spent_inr() < self.cap_inr

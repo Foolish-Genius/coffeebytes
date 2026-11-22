@@ -1,0 +1,8 @@
+item,supplier,category,manufacturer,qty,unit_price,currency,order_date,lead_time_days
+NVT-140X,Navyug Telematics Pvt Ltd,vehicle tracker,,120,6900,INR,2025-04-10,30
+NVT-140X,Navyug Telematics Pvt Ltd,vehicle tracker,,80,8100,INR,2026-06-02,45
+SES-VT200,Sarathi Embedded Systems Pvt Ltd,vehicle tracker,,60,5200,INR,2024-11-15,20
+TT-AIS9,FleetGuru Traders,vehicle tracker,,40,7600,INR,2026-02-20,25
+FG-Pro,FleetGuru Traders,vehicle tracker,,25,4100,INR,2026-03-11,15
+FSC-MCU100A,Broker Beta,component,Fictiva Semiconductor,500,95,INR,2026-05-01,7
+FSC-MCU100A,Distributor Alpha,component,Fictiva Semiconductor,250,150,INR,2026-08-19,120

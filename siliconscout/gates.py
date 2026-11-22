@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from difflib import SequenceMatcher
 from typing import Optional
 
 from .config import Config
@@ -17,6 +18,12 @@ INDIA_RE = re.compile(r"\bindia\b|pan-india|\b(maharashtra|karnataka|tamil nadu|
                       r"gujarat|telangana|delhi|kerala|west bengal)\b", re.I)
 
 
+def _row(h: RegistryHit) -> str:
+    """The registry row itself, as the verbatim evidence for a registry-settled gate."""
+    return " | ".join(x for x in (h.company, h.model, h.ref, f"valid until {h.valid_until}" if h.valid_until else "",
+                                  h.address, f"brand: {h.brand}" if h.brand else "") if x)
+
+
 def _cite(h: RegistryHit) -> str:
     return f"{h.title} (as on {h.as_on}, sha256 {h.sha256}, {h.label}) row: {h.company} / {h.model} / {h.ref}"
 
@@ -29,6 +36,13 @@ def registry_check(c: Candidate, spec: Spec, cfg: Config, regs: Registries, toda
         why = "No government registry exists/is confirmed for this category; official-site evidence only."
         return [GateResult(gate="legal_approval", value=GV.NA, reason=why)], Role.UNKNOWN, [], [], None
     snaps = [regs.get(n) for n in names]
+    if cfg.limits.get("mode") == "live":  # R5: fixture registries never decide a live run
+        fixtures = [s.title for s in snaps if s.label == "TEST_FIXTURE"]
+        snaps = [s for s in snaps if s.label != "TEST_FIXTURE"]
+        if not snaps:
+            return [GateResult(gate="legal_approval", value=GV.UNKNOWN, source=", ".join(fixtures),
+                               reason="Live run: only TEST_FIXTURE registry snapshots are loaded; load the official "
+                                      "list (registry-import) before this gate can be settled.")], Role.UNKNOWN, [], [], None
     me = norm_company(c.company)
     page_text = normalize(" ".join(p.text for p in c.pages))
     exact, other_co = [], []
@@ -40,15 +54,21 @@ def registry_check(c: Candidate, spec: Spec, cfg: Config, regs: Registries, toda
 
     def validity(h: RegistryHit) -> GateResult:
         if h.valid_until and h.valid_until < today.isoformat():
-            return GateResult(gate="legal_approval", value=GV.FAIL, source=_cite(h),
+            return GateResult(gate="legal_approval", value=GV.FAIL, source=_cite(h), date=h.as_on, passage=_row(h),
                               reason=f"Listed but approval expired on {h.valid_until}.")
-        return GateResult(gate="legal_approval", value=GV.PASS, source=_cite(h),
+        return GateResult(gate="legal_approval", value=GV.PASS, source=_cite(h), date=h.as_on, passage=_row(h),
                           reason=f"Model {h.model} listed for {h.company}, ref {h.ref}, valid until {h.valid_until or 'n/a'}.")
 
     if exact:
         valid = [h for h in exact if not (h.valid_until and h.valid_until < today.isoformat())]
         h = (valid or exact)[0]
         return [validity(h)], Role.MAKER, exact, flags, h.company
+    # R2: the maker's own distributor list names this candidate -> authorized channel (beats any site claim).
+    for h in other_co:
+        if norm_company(c.company) in {norm_company(d) for d in regs.authorized(h.company)}:
+            g = validity(h)
+            g.reason = f"Authorized distributor of {h.company} (maker's distributor list). " + g.reason
+            return [g], Role.AUTHORIZED_DISTRIBUTOR, [h], flags, h.company
     # brand vs maker: model listed under a different company whose row names this candidate as brand,
     # or the candidate's own page names the registered maker. Recorded separately, never merged.
     for h in other_co:
@@ -56,16 +76,76 @@ def registry_check(c: Candidate, spec: Spec, cfg: Config, regs: Registries, toda
             g = validity(h)
             g.reason = f"Brand owner; registered maker is {h.company}. " + g.reason
             return [g], Role.BRAND_OWNER, [h], flags, h.company
+    # R3: a near-miss (spelling of the company, or model-number format) is AMBIGUOUS -> HOLD_FOR_REVIEW, never FAIL.
+    near = _near_match(c, snaps)
+    if near:
+        h, why = near
+        flags.append(f"Ambiguous registry match: {why}. A person must confirm before this can PASS or FAIL.")
+        return [GateResult(gate="legal_approval", value=GV.UNKNOWN, source=_cite(h), date=h.as_on,
+                           reason=f"Closest registry row is {h.company} / {h.model} ({h.ref}); {why}.")], \
+            Role.UNKNOWN, [h], flags, None
     if other_co:
         h = other_co[0]
         flags.append(f"Possible impersonation/lookalike: model {c.model} is registered to {h.company}, "
                      f"not {c.company}, and the site does not name the registered maker.")
-        return [GateResult(gate="legal_approval", value=GV.FAIL, source=_cite(h),
+        return [GateResult(gate="legal_approval", value=GV.FAIL, source=_cite(h), date=h.as_on,
                            reason=f"{c.company} / {c.model} is not on {listed}; the model is registered to {h.company}.")], \
             Role.UNKNOWN, [h], flags, None
-    return [GateResult(gate="legal_approval", value=GV.FAIL, source=listed,
+    return [GateResult(gate="legal_approval", value=GV.FAIL, source=listed, date=snaps[0].as_on if snaps else "",
                        reason=f"Company+model {c.company} / {c.model or '(none given)'} not found on {listed}.")], \
         Role.UNKNOWN, [], flags, None
+
+
+def _find_sentence(pages, pred):
+    """First stored-page sentence matching pred: (sentence, page) - verbatim by construction."""
+    from .evidence import sentences
+    for pg in pages:
+        for s in sentences(pg.text):
+            if pred(s):
+                return s, pg
+    return "", None
+
+
+LOOKALIKE = [set("0O"), set("1IL"), set("5S"), set("8B"), set("2Z")]
+
+
+def _model_typo(a: str, b: str) -> bool:
+    """Format-level ambiguity only: a dropped/added trailing suffix char, or ONE lookalike char (0/O, 1/I).
+    A different digit (140 vs 240, 1000 vs 1001) is a different model -> clear absence, FAIL."""
+    if not a or not b:
+        return False
+    if abs(len(a) - len(b)) == 1 and (a.startswith(b) or b.startswith(a)) and min(len(a), len(b)) >= 4:
+        longer = a if len(a) > len(b) else b
+        return not longer[-1].isdigit()  # a dropped suffix letter (NVT-140 vs NVT-140X), not a dropped digit
+    if len(a) == len(b):
+        diff = [(x, y) for x, y in zip(a, b) if x != y]
+        return len(diff) == 1 and any({*diff[0]} <= s for s in LOOKALIKE)
+    return False
+
+
+def _sim(a: str, b: str) -> float:
+    return SequenceMatcher(None, a, b).ratio() if a and b else 0.0
+
+
+def _near_match(c: Candidate, snaps) -> Optional[tuple[RegistryHit, str]]:
+    """Company spelled slightly differently with the same model, or the same company with a near-identical
+    model number. Thresholds are deliberately strict: anything looser is a clear absence (FAIL)."""
+    me, mm = norm_company(c.company), norm_model(c.model)
+    best = None
+    for s in snaps:
+        for row in s.rows:
+            rc, rm = norm_company(row.get("company", "")), norm_model(row.get("model", ""))
+            cs, ms = _sim(me, rc), _sim(mm, rm)
+            if rm == mm and rc != me and cs >= 0.85:
+                why = f"company name '{c.company}' differs only slightly from registered '{row['company']}' (same model)"
+            elif rc == me and rm != mm and _model_typo(mm, rm):
+                why = f"model '{c.model}' differs only slightly from registered '{row['model']}' for the same company"
+            else:
+                continue
+            score = cs + ms
+            if not best or score > best[0]:
+                best = (score, s.hit(row), why)
+    return (best[1], best[2]) if best else None
 
 
 def apply_company_context(a: Assessment, c: Candidate, ctx: Optional[dict], ig: GateResult, cfg: Config) -> GateResult:
@@ -106,7 +186,7 @@ def apply_company_context(a: Assessment, c: Candidate, ctx: Optional[dict], ig: 
 
 
 def assess(c: Candidate, spec: Spec, cfg: Config, regs: Registries, store: Store, today: date,
-           llm=None, context: Optional[dict] = None) -> Assessment:
+           llm=None, context: Optional[dict] = None, extra_fields: Optional[dict] = None) -> Assessment:
     a = Assessment(candidate_id=c.candidate_id, company=c.company, model=c.model)
     lane = cfg.lanes[spec.lane]
     gcfg = cfg.gates
@@ -128,14 +208,17 @@ def assess(c: Candidate, spec: Spec, cfg: Config, regs: Registries, store: Store
     a.role = role
     allowed = set(cfg.priorities.get("allowed_roles", ["MAKER", "BRAND_OWNER"]))
     needs_maker = cfg.priorities.get("buyer_requires_maker", True)
-    if role.value in allowed:
+    if role.value in allowed and hits:
+        h = hits[0]
         rg = GateResult(gate="supplier_role", value=GV.PASS, reason=f"{role.value}" + (f"; maker of record {maker}" if maker and role != Role.MAKER else ""),
-                        source=hits[0].title if hits else "")
+                        source=_cite(h), passage=_row(h), date=h.as_on)
     elif role == Role.TRADER:
+        sent, pg = _find_sentence(c.pages, lambda s: trader_hit in s.lower())
         rg = GateResult(gate="supplier_role", value=GV.FAIL if needs_maker else GV.PASS,
                         reason=f"Listing says '{c.listing_role or 'n/a'}' but site indicates resale (\"{trader_hit}\") and no registry entry. "
                                + ("Buyer requires a maker." if needs_maker else "Kept as reseller."),
-                        source=c.pages[0].url if c.pages else "")
+                        source=pg.url if pg else (c.pages[0].url if c.pages else ""), passage=sent,
+                        date=pg.fetched_at if pg else "")
     else:
         rg = GateResult(gate="supplier_role", value=GV.UNKNOWN, reason="Role not settled by registry or site.")
 
@@ -145,9 +228,13 @@ def assess(c: Candidate, spec: Spec, cfg: Config, regs: Registries, store: Store
         named = norm_company(h.company) in norm_company(text) or (h.brand and norm_company(h.brand) in norm_company(text))
         city = (h.address.split(",")[-2].strip().lower() if h.address.count(",") >= 2 else "")
         ok = named and (role != Role.MAKER or not city or city in text or norm_company(c.company) in norm_company(text))
-        ig = GateResult(gate="entity_identity", value=GV.PASS if ok and not flags else GV.UNKNOWN,
-                        reason="Registry name/address matches official site." if ok and not flags else "Registry entity not confirmed on this site.",
-                        source=c.pages[0].url)
+        ok = ok and not flags
+        names = [n for n in (h.company, h.brand) if n]
+        sent, pg = _find_sentence(c.pages, lambda s: any(norm_company(n) in norm_company(s) for n in names))
+        ig = GateResult(gate="entity_identity", value=GV.PASS if ok and sent else GV.UNKNOWN,
+                        reason="Registry name/address matches official site." if ok and sent else "Registry entity not confirmed on this site.",
+                        source=pg.url if pg else c.pages[0].url, passage=sent if ok else "",
+                        date=(pg.fetched_at if pg else "") if ok else "")
     elif not c.pages:
         ig = GateResult(gate="entity_identity", value=GV.UNKNOWN, reason="Official site not fetched.")
         a.missing_evidence.append("official site page")
@@ -156,7 +243,7 @@ def assess(c: Candidate, spec: Spec, cfg: Config, regs: Registries, store: Store
     ig = apply_company_context(a, c, context, ig, cfg)
 
     # 5. spec match: verbatim passages only
-    fields = lane.get("required_fields", {})
+    fields = {**lane.get("required_fields", {}), **(extra_fields or {})}  # follow-ups add/tighten fields
     claims = [verify_claim(cl, c.pages) for cl in c.claims]
     for cl in claims:
         if not cl.verified:
@@ -182,7 +269,8 @@ def assess(c: Candidate, spec: Spec, cfg: Config, regs: Registries, store: Store
         elif cl.value == "contradicted":
             spec_gates.append(GateResult(gate=f"spec:{f}", value=GV.FAIL, reason=f"{fc['label']}: contradicted.", source=cl.url, passage=cl.passage))
         else:
-            spec_gates.append(GateResult(gate=f"spec:{f}", value=GV.PASS, reason=fc["label"], source=cl.url, passage=cl.passage))
+            spec_gates.append(GateResult(gate=f"spec:{f}", value=GV.PASS, reason=fc["label"], source=cl.url, passage=cl.passage,
+                                         date=next((p.fetched_at for p in c.pages if p.url == cl.url), "")))
     vals = [g.value for g in spec_gates]
     if not vals:
         sv = GV.NA
@@ -194,13 +282,21 @@ def assess(c: Candidate, spec: Spec, cfg: Config, regs: Registries, store: Store
         sv = GV.PARTIAL
     else:
         sv = GV.UNKNOWN
-    sg = GateResult(gate="spec_match", value=sv, reason=f"{vals.count(GV.PASS)}/{len(vals)} required fields evidenced verbatim.")
+    sg = GateResult(gate="spec_match", value=sv, reason=f"{vals.count(GV.PASS)}/{len(vals)} required fields evidenced verbatim.",
+                    source="derived from the spec:* rows (each cites its own page and passage)",
+                    date=max((x.date for x in spec_gates if x.date), default=""))
 
     # 6. geography
-    addr = " ".join(h.address for h in hits)
-    geo_ok = bool(INDIA_RE.search(text) or INDIA_RE.search(addr))
-    geo = GateResult(gate="geography", value=GV.PASS if geo_ok else GV.UNKNOWN,
-                     reason="India service/registry address evidenced." if geo_ok else "Service coverage not evidenced.")
+    sent, pg = _find_sentence(c.pages, lambda s: bool(INDIA_RE.search(s)))
+    reg = next((h for h in hits if INDIA_RE.search(h.address)), None)
+    if sent:
+        geo = GateResult(gate="geography", value=GV.PASS, reason="India service coverage stated on the supplier site.",
+                         source=pg.url, passage=sent, date=pg.fetched_at)
+    elif reg:
+        geo = GateResult(gate="geography", value=GV.PASS, reason="Registered address is in India.",
+                         source=_cite(reg), passage=reg.address, date=reg.as_on)
+    else:
+        geo = GateResult(gate="geography", value=GV.UNKNOWN, reason="Service coverage not evidenced.")
 
     # 7. commercial: confirmations, never failures
     cap = GateResult(gate="capacity", value=GV.TO_CONFIRM, reason="Supplier reply needed.")
@@ -215,11 +311,13 @@ def decide(a: Assessment, spec: Spec, cfg: Config) -> Decision:
     g = {x.gate: x.value for x in a.gates}
     needs_maker = cfg.priorities.get("buyer_requires_maker", True)
     legal = g.get("legal_approval")
-    if any("impersonation" in f or f.startswith("Identity conflict") for f in a.flags):
+    if any("impersonation" in f or f.startswith(("Identity conflict", "Ambiguous registry match")) for f in a.flags):
         return Decision.HOLD_FOR_REVIEW
     if legal == GV.FAIL or g.get("supplier_role") == GV.FAIL or g.get("spec_match") == GV.FAIL \
             or g.get("entity_identity") == GV.FAIL:
         return Decision.NOT_A_FIT
+    if legal == GV.UNKNOWN and cfg.lanes[spec.lane].get("legal_required"):
+        return Decision.CANNOT_VERIFY  # R4: no source settles a legally required approval
     if not cfg.lanes[spec.lane].get("legal_required") and a.missing_evidence and g.get("spec_match") in (GV.UNKNOWN, GV.NA):
         return Decision.CANNOT_VERIFY
     blocking = g.get("entity_identity") == GV.UNKNOWN or (g.get("supplier_role") == GV.UNKNOWN and needs_maker)
@@ -242,8 +340,31 @@ def quote_supports_order(q: Quote, spec: Spec, cfg: Config) -> bool:
     return True
 
 
+def commercial_risk_flags(q: Quote, cfg: Config) -> list[str]:
+    """Inflation / lead-time signals. Never failure gates (R6): they tell the buyer what to lock in before PO."""
+    from datetime import datetime, timedelta
+    out = []
+    long_days = int(cfg.priorities.get("long_lead_time_days", 84))
+    lead = q.lead_time_days if q.lead_time_days is not None else q.delivery_days
+    if lead is not None and lead >= long_days:
+        out.append(f"Long lead time: {lead} days (~{lead // 7} weeks). Lock price and delivery schedule in the PO, "
+                   "or plan buffer stock.")
+    if lead is not None and q.validity_until:
+        try:
+            start = datetime.fromisoformat(q.received_at[:10]) if q.received_at else datetime.now()
+            due = (start + timedelta(days=lead)).date().isoformat()
+        except ValueError:
+            due = None
+        if due and q.validity_until < due and not q.escalation_clause:
+            out.append(f"Price-escalation risk: quote valid until {q.validity_until} but delivery is ~{due}, "
+                       "and no escalation clause is stated. Ask for a fixed price to delivery or a capped index.")
+    return out
+
+
 def apply_quote(a: Assessment, q: Quote, spec: Spec, cfg: Config) -> None:
     a.quote = q
+    a.flags = [f for f in a.flags if not f.startswith(("Long lead time", "Price-escalation risk"))]
+    a.flags += commercial_risk_flags(q, cfg)
     for g in a.gates:
         if g.gate == "capacity" and q.quantity and spec.quantity and q.quantity >= spec.quantity:
             g.value, g.reason, g.source = GV.CONFIRMED, f"Supplier quoted {q.quantity} units.", q.label.value
