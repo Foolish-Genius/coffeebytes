@@ -17,6 +17,10 @@ services:
     envVars:
       - key: SS_JOBS_DIR
         value: /var/data/jobs
+      - key: SS_WEB_FREE_CREDITS
+        value: "10"
+      - key: SS_WEB_CRUSTDATA_SPEND
+        value: "1"
       - key: PUBLIC_BASE_URL     # e.g. https://siliconscout.onrender.com (no trailing slash)
         sync: false
       - key: ADMIN_EMAILS
