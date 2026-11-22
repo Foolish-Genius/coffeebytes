@@ -110,7 +110,7 @@ function Thread({ jobId, out, onUpdate }) {
         </div>
       )}
       {!qs.length && !th.length && <p className="muted small-text">No open questions. Follow-up turns for this job will appear here.</p>}
-      {reply && <div className="bubble" style={{ marginTop: ".8rem" }}>{reply}</div>}
+      {reply && !(out.thread || []).length && <div className="bubble" style={{ marginTop: ".8rem" }}>{reply}</div>}
       <form onSubmit={send} className="stack" style={{ marginTop: ".8rem" }}>
         <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder="Answer a question or ask a follow-up" maxLength={2000} required />
         {err && <div className="alert error">{err}</div>}
@@ -173,7 +173,7 @@ function Candidates({ candidates }) {
       <div className="decision-bar">
         {groups.map((g) => <span key={g.id} className={`seg d-${g.id}`} style={{ flex: g.items.length }} title={`${g.t}: ${g.items.length}`}>{g.items.length}</span>)}
       </div>
-      {groups.length === 0 && <p className="muted">No candidates.</p>}
+      {groups.length === 0 && <div className="empty"><b>No candidates found yet.</b><span className="muted">The registries and Crustdata returned no supplier for this spec. Try answering the questions in Follow-up or making the need more specific.</span></div>}
       {groups.map((g) => (
         <div key={g.id} className="group">
           <div className={`group-head d-${g.id}`}>

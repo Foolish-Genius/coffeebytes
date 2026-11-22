@@ -10,7 +10,7 @@ const EXAMPLES = [
 
 export default function Dashboard({ cfg, user, refreshUser }) {
   const [need, setNeed] = useState(EXAMPLES[0]);
-  const [source, setSource] = useState("fixture");
+  const [source, setSource] = useState("registry");
   const [jobs, setJobs] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
