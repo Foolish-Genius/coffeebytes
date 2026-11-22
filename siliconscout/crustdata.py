@@ -152,6 +152,55 @@ class Crustdata:
         self.store.audit("crustdata_balance", credits=bal)
         return float(bal) if bal is not None else None
 
+    # -- live discovery ---------------------------------------------------------------------------
+    def search_companies(self, query: str, limit: int = 10, country: str = "India") -> list[dict]:
+        """POST /company/search (ranked): 0.03 credits per result, none for an empty result.
+        Same locks as enrich: spend flag, deadline, free balance check, global budget."""
+        if not self.available() or not self.allow_spend:
+            self.store.audit("crustdata_search_skipped", reason="no key, disabled or spend locked")
+            return []
+        if self.deadline and time.time() > self.deadline:
+            self.store.audit("time_limit_skipped", op="crustdata_search")
+            return []
+        per = 0.03
+        bal = self.balance()
+        b = self._budget_load()
+        if b.get("baseline") is None and bal is not None:
+            b["baseline"] = bal
+            self._budget_save(b)
+        limit_total = float(self.cfg.get("max_total_credits", 1000))
+        if self.cfg.get("max_fraction_of_balance") and b.get("baseline"):
+            limit_total = min(limit_total, float(self.cfg["max_fraction_of_balance"]) * b["baseline"])
+        spent = max(float(b.get("spent", 0)), (b.get("baseline") or 0) - (bal or 0))
+        if bal is None or bal < limit * per + float(self.cfg.get("reserve_credits", 50)) or spent + limit * per > limit_total:
+            self.store.audit("crustdata_spend_blocked", op="search", balance=bal, spent=round(spent, 2))
+            return []
+        body = {"search": {"query": query[:500], "mode": "hybrid"},
+                "filters": {"field": "locations.country", "type": "=", "value": country},
+                "fields": ["basic_info.name", "basic_info.primary_domain", "basic_info.website",
+                           "locations.headquarters", "headcount.total"],
+                "limit": int(limit)}
+        t0 = time.time()
+        try:
+            status, data, hdr = self.http("POST", "/company/search", body, self.key, int(self.cfg.get("timeout_s", 20)))
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+            self.store.audit("crustdata_error", op="search", error=self._scrub(str(e))[:200])
+            return []
+        if status != 200 or not isinstance(data, dict):
+            self.store.audit("crustdata_http_error", op="search", status=status,
+                             error=self._scrub(json.dumps(data))[:300] if data else "")
+            return []
+        rows = data.get("companies") or []
+        used = hdr.get("x-credits-used")
+        credits = float(used) if used else per * len(rows)
+        b = self._budget_load()
+        b["spent"] = round(float(b.get("spent", 0)) + credits, 4)
+        self._budget_save(b)
+        self.store.ledger("crustdata", "company_search", credits * float(self.cfg.get("inr_per_credit", 0)),
+                          int((time.time() - t0) * 1000), credits=credits, records=len(rows))
+        self.store.audit("crustdata_search", query=query[:120], results=len(rows), credits=credits)
+        return [compact(r) for r in rows]
+
     # -- plan + spend -----------------------------------------------------------------------------
     def plan(self, candidates: list[Candidate]) -> tuple[dict[str, dict], dict]:
         """No network. Returns (cached contexts, plan with worst-case credit estimate)."""

@@ -230,3 +230,30 @@ def test_no_key_no_call(tmp_path, monkeypatch):
     api = FakeAPI()
     job = run(Config.load(jobs_dir=tmp_path), api, spend=True)
     assert api.calls == [] and by_id(job, "c01").gate("entity_identity").value == GV.PASS
+
+
+class SearchAPI(FakeAPI):
+    def __call__(self, method, path, body, key, timeout):
+        if path == "/company/search":
+            self.calls.append({"method": method, "path": path, "body": body, "key": key})
+            return 200, {"companies": [{"crustdata_company_id": 9, "basic_info": {"name": "Scanwell Devices Pvt Ltd"},
+                                        "locations": {"headquarters": "Mumbai, India"}}], "next_cursor": None}, {}
+        return super().__call__(method, path, body, key, timeout)
+
+
+def test_any_prompt_finds_live_candidates_via_crustdata_search(cfg):
+    api = SearchAPI()
+    job = Job("live-any", cfg, today=date(2026, 11, 22), crust_http=api, crust_spend=True)
+    job.run("we need handheld barcode scanners for 20 pickers in our Bhiwandi warehouse", source="registry")
+    s = [c for c in api.calls if c["path"] == "/company/search"][0]["body"]
+    assert s["filters"]["value"] == "India" and s["limit"] == 10 and "barcode" in s["search"]["query"].lower()
+    assert [c.company for c in job.state.candidates] == ["Scanwell Devices Pvt Ltd"]
+    assert any(r["op"] == "company_search" for r in job.store.ledger_rows())
+    assert to_output(job)["candidates"]  # a result page, never an empty no-op
+
+
+def test_search_respects_spend_lock(cfg):
+    api = SearchAPI()
+    job = Job("live-lock", cfg, today=date(2026, 11, 22), crust_http=api, crust_spend=False)
+    job.run("we need handheld barcode scanners for 20 pickers", source="registry")
+    assert not [c for c in api.calls if c["path"] == "/company/search"]

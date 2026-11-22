@@ -96,7 +96,8 @@ class Job:
         return st
 
     def _s_discover(self, source, cfile) -> bool:
-        self.state.candidates = discover(self.state.spec, self.cfg, self.store, source, cfile, deadline=self.deadline)
+        self.state.candidates = discover(self.state.spec, self.cfg, self.store, source, cfile, deadline=self.deadline,
+                                         crust=self.crust)
         self._commit("discover")
         return True
 

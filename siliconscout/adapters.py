@@ -17,7 +17,8 @@ from .store import Store, now
 
 
 def discover(spec: Spec, cfg: Config, store: Store, source: str = "fixture",
-             candidates_file: Optional[Path] = None, deadline: Optional[float] = None) -> list[Candidate]:
+             candidates_file: Optional[Path] = None, deadline: Optional[float] = None,
+             crust=None) -> list[Candidate]:
     """source = fixture | file | registry.
     file: JSON list of {company, domain, model, email, urls[]} from a live search; pages are fetched and stored.
     registry: seeds candidates from the lane's approval lists themselves (free, authoritative), no pages yet."""
@@ -47,8 +48,10 @@ def discover(spec: Spec, cfg: Config, store: Store, source: str = "fixture",
             out.append(Candidate(candidate_id=f"c{i + 1:02d}", company=c["company"], domain=c.get("domain", ""),
                                  model=c.get("model", ""), listing_role=c.get("listing_role", ""),
                                  email=c.get("email", ""), pages=pages, source="live"))
-    elif source == "registry":
-        regs, seen = Registries(cfg.data_dir), set()
+    if source in ("registry", "live"):
+        out += _live_candidates(spec, cfg, store, deadline, crust)
+    if source == "registry":
+        regs, seen = Registries(cfg.data_dir), {norm_company(c.company) for c in out}
         for name in cfg.lanes[spec.lane].get("registries", []):
             for r in regs.get(name).rows:
                 k = norm_company(r["company"])
@@ -58,6 +61,30 @@ def discover(spec: Spec, cfg: Config, store: Store, source: str = "fixture",
                                          model=r["model"], source=f"registry:{name}"))
     out = out[: int(lim.get("max_candidates", 12))]
     store.audit("discovered", source=source, n=len(out), min_expected=lim.get("min_candidates", 8))
+    return out
+
+
+def _live_candidates(spec: Spec, cfg: Config, store: Store, deadline: Optional[float], crust) -> list[Candidate]:
+    """Any prompt -> real Indian companies via Crustdata company search, then a free homepage fetch for evidence.
+    Search results are supplier CLAIMS to verify, never approval evidence."""
+    if crust is None:
+        return []
+    n = int(cfg.limits.get("discovery", {}).get("live_results", 10))
+    query = f"{spec.device} manufacturer supplier. Buyer need: {spec.raw_need}"
+    found = crust.search_companies(query, limit=n)
+    fcfg, out = cfg.limits.get("fetch", {}), []
+    for i, r in enumerate(found):
+        if not r.get("name"):
+            continue
+        dom = (r.get("primary_domain") or "").lower()
+        pages = []
+        url = r.get("website") or (f"https://{dom}" if dom else "")
+        if url and not (deadline and time.time() > deadline):
+            p = fetch(url, store, int(fcfg.get("timeout_s", 15)), fcfg.get("user_agent", "SiliconScout"))
+            if p:
+                pages.append(p)
+        out.append(Candidate(candidate_id=f"L{i + 1:02d}", company=r["name"], domain=dom, pages=pages,
+                             listing_role="supplier (Crustdata search result)", source="crustdata:search"))
     return out
 
 

@@ -240,6 +240,14 @@ def assess(c: Candidate, spec: Spec, cfg: Config, regs: Registries, store: Store
         a.missing_evidence.append("official site page")
     else:
         ig = GateResult(gate="entity_identity", value=GV.UNKNOWN, reason="No registry record to match against.")
+        if not lane.get("registries") and c.source.startswith("crustdata"):
+            # no registry exists for this category: Crustdata's company record + the company's own site naming itself
+            nm = norm_company(c.company)
+            sent, pg = _find_sentence(c.pages, lambda s: nm and nm.split()[0] in norm_company(s))
+            if sent:
+                ig = GateResult(gate="entity_identity", value=GV.PASS, passage=sent, source=pg.url, date=pg.fetched_at,
+                                reason="Crustdata company record and the company's own site name the same entity "
+                                       "(no government registry exists for this category).")
     ig = apply_company_context(a, c, context, ig, cfg)
 
     # 5. spec match: verbatim passages only

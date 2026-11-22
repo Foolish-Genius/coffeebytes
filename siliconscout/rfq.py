@@ -19,8 +19,9 @@ DEVICE_FIELDS = ["unit price", "quantity and MOQ", "approval certificate / TAC n
 
 def can_rfq(a: Assessment) -> bool:
     g = {x.gate: x.value for x in a.gates}
-    hard_ok = g.get("entity_identity") == GV.PASS and g.get("supplier_role") == GV.PASS \
-        and g.get("legal_approval") in (GV.PASS, GV.NA)
+    no_registry = g.get("legal_approval") == GV.NA  # role can't be settled by a public record -> the RFQ asks
+    hard_ok = g.get("entity_identity") == GV.PASS and g.get("legal_approval") in (GV.PASS, GV.NA) \
+        and (g.get("supplier_role") == GV.PASS or (no_registry and g.get("supplier_role") == GV.UNKNOWN))
     return a.decision in (Decision.QUALIFIED_FOR_RFQ, Decision.PROVISIONAL) and hard_ok
 
 
@@ -37,6 +38,9 @@ def draft(job_id: str, a: Assessment, email: str, spec: Spec) -> RFQ:
     if spec.compliance_checks:
         lines += ["", "Please attach or confirm these compliance documents:",
                   *[f"- {c.split(' - ')[0]}" for c in spec.compliance_checks]]
+    if g_role := next((x for x in a.gates if x.gate == "supplier_role" and x.value == GV.UNKNOWN), None):
+        lines += ["", "Please also confirm whether you manufacture this device (factory address) or resell it "
+                      "(name the manufacturer and your authorization)."]
     lines += ["", "Please confirm you can supply this quantity and your production lead time.", "",
               "Regards,", "Procurement (via SiliconScout)"]
     body = "\n".join(lines)
