@@ -45,9 +45,16 @@ with st.sidebar:
     st.caption("Keys go in the .env file in the project folder (see .env.example). Restart the app after editing.")
 
 need = st.text_area("Operating need", "Need GPS trackers for 300 trucks, deliver to Pune")
-if st.button("Run / resume", type="primary"):
+if st.button("Run", type="primary"):
+    prev = Job(job_id, cfg).state.spec if job_id else None
+    if prev is not None and prev.raw_need.strip() != need.strip():  # new prompt -> new job, never resume the old one
+        job_id = uuid.uuid4().hex[:8]
+        st.session_state["default_job"] = job_id
     st.session_state["job_id"] = job_id
-    Job(job_id, cfg).run(need, source)
+    try:
+        Job(job_id, cfg).run(need, source)
+    except Exception as e:  # show the reason instead of a silent no-op
+        st.error(f"Run failed: {e}")
 
 with st.expander("Supply-chain review: upload your purchase history (CSV)"):
     st.caption("Columns: item, supplier, qty, unit_price, order_date [, category, manufacturer, lead_time_days]. "

@@ -80,11 +80,13 @@ class Job:
             self._commit("spec", "RUNNING")
         if not st.extra.get("clarified"):  # vague need: ask before any search
             qs = clarify(st.spec)
-            if qs:
+            if qs and self.cfg.limits.get("clarify_blocks", False):
                 st.extra["questions"], st.status = qs, "NEEDS_CLARIFICATION"
                 self.store.checkpoint(st)
                 return st
-            st.extra["clarified"], st.extra["questions"] = True, []
+            if qs:  # default: always run; questions stay visible and answering them re-runs
+                st.spec.assumptions.append("Ran without answers to: " + " ".join(qs))
+            st.extra["clarified"], st.extra["questions"] = True, qs
         stages = COMPONENT_STAGES if st.spec.lane == "D_COMPONENT" else DEVICE_STAGES
         for stage in stages:
             if self._done(stage):
@@ -164,10 +166,10 @@ class Job:
         elif action == "proceed":
             st.extra["clarified"] = True
         qs = clarify(st.spec)
-        if qs and action != "proceed":
+        if qs and action != "proceed" and self.cfg.limits.get("clarify_blocks", False):
             st.extra["questions"], st.status = qs, "NEEDS_CLARIFICATION"
             return "Updated. Still need: " + " ".join(qs)
-        st.extra["clarified"], st.extra["questions"] = True, []
+        st.extra["clarified"], st.extra["questions"] = True, qs
         keep = {"spec"} if rediscover else {"spec", "discover"}
         st.extra["done"] = [d for d in st.extra.get("done", []) if d in keep]
         st.rfqs = [r for r in st.rfqs if r.status == "SENT"]

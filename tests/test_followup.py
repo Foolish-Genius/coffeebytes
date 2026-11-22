@@ -1,4 +1,4 @@
-"""Vague needs get clarifying questions before any search; follow-ups change the spec or explain results."""
+﻿"""Vague needs get clarifying questions before any search; follow-ups change the spec or explain results."""
 from datetime import date
 
 import pytest
@@ -13,7 +13,9 @@ TODAY = date(2026, 11, 22)
 
 @pytest.fixture
 def cfg(tmp_path):
-    return Config.load(jobs_dir=tmp_path)
+    c = Config.load(jobs_dir=tmp_path)
+    c.limits["clarify_blocks"] = True  # these tests exercise the blocking mode
+    return c
 
 
 def job(cfg, need, jid="f1"):
@@ -79,3 +81,10 @@ def test_no_spec_change_after_rfqs_sent(cfg):
 def test_unparsed_followup_no_llm_is_honest(cfg):
     j = job(cfg, "Need GPS trackers for 300 trucks, deliver to Pune")
     assert "couldn't map" in j.follow_up("hmm what about the weather")
+
+
+def test_default_always_runs_vague_prompt(tmp_path):
+    j = Job("d", Config.load(jobs_dir=tmp_path), today=TODAY)
+    j.run("Need GPS trackers, deliver to Pune")  # no quantity
+    assert to_output(j)["status"] == "AWAITING_APPROVAL" and to_output(j)["questions"]
+

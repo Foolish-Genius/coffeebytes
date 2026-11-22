@@ -34,4 +34,5 @@ discovery:
   max_candidates: 12
 distributor:
   max_quote_age_minutes: 60
-mode: demo                 # demo allows fixtures; live rejects TEST_FIXTURE data in decisions
+clarify_blocks: false      # false = every prompt runs; clarifying questions are shown, not required
+mode: demo                # demo allows fixtures; live rejects TEST_FIXTURE data in decisions
