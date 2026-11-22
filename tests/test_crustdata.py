@@ -61,9 +61,9 @@ def by_id(job, cid):
 
 
 # --- the lock -------------------------------------------------------------------------------------
-def test_default_is_dry_run_zero_network_calls(cfg):
+def test_spend_lock_is_dry_run_zero_network_calls(cfg):
     api = FakeAPI()
-    job = run(cfg, api)  # config allow_spend: false
+    job = run(cfg, api, spend=False)  # allow_spend: false
     assert api.calls == []
     plan = to_output(job)["crustdata_plan"]
     assert plan["to_send"] == 9 and plan["worst_case_credits"] == pytest.approx(1.8) and plan["spent"] is False
@@ -72,8 +72,41 @@ def test_default_is_dry_run_zero_network_calls(cfg):
     assert to_output(job)["cost"]["crustdata_credits"] == 0
 
 
-def test_shipped_config_keeps_spend_locked():
-    assert Config.load().limits["crustdata"]["allow_spend"] is False
+def test_shipped_config_budget_is_1000_and_10_percent():
+    c = Config.load().limits["crustdata"]
+    assert c["allow_spend"] is True and c["max_total_credits"] == 1000 and c["max_fraction_of_balance"] == 0.10
+
+
+def test_global_budget_trims_across_jobs(cfg):
+    cfg.limits["crustdata"].update(max_total_credits=0.8, max_fraction_of_balance=None)  # room for 4 matches
+    api = FakeAPI()
+    job1 = run(cfg, api, "b1", spend=True)
+    # worst case 9 x 0.2 = 1.8 > 0.8 -> only 4 identifiers sent; of those only navyug matches -> 0.2 spent
+    assert len(api.spend_calls()[0]["body"]["domains"]) == 4
+    assert any(r["event"] == "crustdata_budget" and r["detail"]["remaining"] == pytest.approx(0.8)
+               for r in job1.store.audit_rows())
+    (cfg.jobs_dir / "_cache" / "crustdata_cache.json").unlink()  # force a fresh lookup in the next job
+    job2 = run(cfg, api, "b2", spend=True)
+    assert len(api.spend_calls()[1]["body"]["domains"]) == 3  # 0.6 left -> 3 identifiers
+    assert any(r["event"] == "crustdata_budget" and r["detail"]["remaining"] == pytest.approx(0.6)
+               for r in job2.store.audit_rows())
+
+
+def test_real_balance_drop_counts_against_budget(cfg):
+    cfg.limits["crustdata"].update(max_total_credits=1000, max_fraction_of_balance=0.10)
+    (cfg.jobs_dir / "_cache").mkdir(parents=True, exist_ok=True)
+    (cfg.jobs_dir / "_cache" / "crustdata_budget.json").write_text(json.dumps({"baseline": 15000, "spent": 0}))
+    api = FakeAPI(balance=13500)  # 1,500 already gone (e.g. used elsewhere) > 10% of 15,000
+    job = run(cfg, api, "bal", spend=True)
+    assert api.spend_calls() == []
+    assert any(r["event"] == "crustdata_spend_blocked" for r in job.store.audit_rows())
+
+
+def test_budget_limit_is_min_of_total_and_fraction(cfg):
+    cfg.limits["crustdata"].update(max_total_credits=1000, max_fraction_of_balance=0.10)
+    job = run(cfg, FakeAPI(balance=15000), "lim", spend=True)
+    ev = next(r for r in job.store.audit_rows() if r["event"] == "crustdata_budget")
+    assert ev["detail"]["limit"] == 1000  # min(1000, 0.10 x 15000 = 1500)
 
 
 def test_cap_limits_what_is_sent(cfg):
@@ -132,7 +165,7 @@ def test_cache_means_second_job_pays_nothing(cfg):
 
 def test_context_command_upgrades_dry_run(cfg):
     api = FakeAPI()
-    job = run(cfg, api, "up")
+    job = run(cfg, api, "up", spend=False)
     assert api.calls == []
     job2 = Job("up", cfg, today=date(2026, 11, 22), crust_http=api, crust_spend=True)
     job2.refresh_context()

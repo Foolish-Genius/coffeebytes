@@ -8,3 +8,4 @@ os.environ["SS_NO_DOTENV"] = "1"
 os.environ.pop("ANTHROPIC_API_KEY", None)
 os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 os.environ.pop("MOUSER_API_KEY", None)
+os.environ.pop("CRUSTDATA_API_KEY", None)  # Crustdata tests set a fake key and a mocked HTTP layer

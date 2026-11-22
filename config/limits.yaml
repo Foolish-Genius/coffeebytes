@@ -11,12 +11,13 @@ llm:
 max_inr_per_job: 50
 crustdata:                 # company context only (identity, HQ, headcount, trader signal) - never approval evidence
   enabled: auto            # auto = only if CRUSTDATA_API_KEY is set (in .env); false = never
-  allow_spend: false       # HARD LOCK: false = no network call, dry-run plan + credit estimate only.
-                           # Override for one run with: run ... --crustdata-spend  (or `context <job> --spend`)
+  allow_spend: true        # false = no network call, dry-run plan + credit estimate only
+  max_total_credits: 1000  # GLOBAL budget across all jobs (tracked in jobs/_cache/crustdata_budget.json
+  max_fraction_of_balance: 0.10  #   and by the real balance drop since the first spend) = 10% of 15,000
   mode: identify           # identify = 0.2 credits per MATCH, misses free (name, domain, size range)
                            # enrich   = 2 credits per record (adds HQ, country, exact headcount)
   fields: [basic_info, locations, headcount]   # enrich mode only
-  max_credits_per_job: 5   # worst-case cap; identifiers beyond it are never sent (identify: 25 companies)
+  max_credits_per_job: 25  # worst-case cap per job (identify: 125 companies; enrich: 12)
   reserve_credits: 50      # free balance check must show estimate + this before any spend
   cache_days: 30           # repeat lookups of the same company are free
   inr_per_credit: 0        # set to your plan's rate to see INR in the ledger

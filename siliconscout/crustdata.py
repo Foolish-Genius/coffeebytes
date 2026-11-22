@@ -123,6 +123,21 @@ class Crustdata:
         ttl = int(self.cfg.get("cache_days", 30))
         return datetime.fromisoformat(entry["at"]) > datetime.now(timezone.utc) - timedelta(days=ttl)
 
+    # -- global budget (all jobs) -----------------------------------------------------------------
+    @property
+    def _budget_path(self) -> Path:
+        return self.cache_path.parent / "crustdata_budget.json"
+
+    def _budget_load(self) -> dict:
+        try:
+            return json.loads(self._budget_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _budget_save(self, b: dict) -> None:
+        self._budget_path.parent.mkdir(parents=True, exist_ok=True)
+        self._budget_path.write_text(json.dumps(b), encoding="utf-8")
+
     # -- free calls -------------------------------------------------------------------------------
     def balance(self) -> Optional[float]:
         """GET /account/credits - free per Crustdata docs. Returns None if unavailable."""
@@ -180,6 +195,31 @@ class Crustdata:
         if bal is None or bal < plan["worst_case_credits"] + reserve:
             self.store.audit("crustdata_spend_blocked", balance=bal, needed=plan["worst_case_credits"], reserve=reserve)
             return out
+        # Global budget across ALL jobs: min(max_total_credits, fraction x starting balance).
+        budget = self._budget_load()
+        if budget.get("baseline") is None:
+            budget["baseline"] = bal
+            self._budget_save(budget)
+        spent = max(float(budget.get("spent", 0)), budget["baseline"] - bal)  # own count OR real balance drop
+        limit = float(self.cfg.get("max_total_credits", 1000))
+        frac = self.cfg.get("max_fraction_of_balance")
+        if frac:
+            limit = min(limit, float(frac) * budget["baseline"])
+        remaining = limit - spent
+        per = plan["credits_per_match"]
+        allowed = int(max(0.0, remaining) / per + 1e-9)
+        if allowed < plan["to_send"]:
+            flat = [(k, i) for k, v in plan["batches"].items() for i in v][:allowed]
+            plan["batches"] = {k: [i for kk, i in flat if kk == k] for k in plan["batches"]}
+            plan["batches"] = {k: v for k, v in plan["batches"].items() if v}
+            plan["skipped_over_budget"] = plan["to_send"] - allowed
+            plan["to_send"] = allowed
+            plan["worst_case_credits"] = round(allowed * per, 2)
+        plan["budget"] = {"limit": limit, "spent": round(spent, 2), "remaining": round(remaining, 2)}
+        self.store.audit("crustdata_budget", **plan["budget"], sending=plan["to_send"])
+        if not plan["to_send"]:
+            self.store.audit("crustdata_spend_blocked", reason="global budget exhausted", **plan["budget"])
+            return out
         cache = self._load()
         ids = {(k, ident): cid for k in plan["batches"] for cid, ident in
                [(c.candidate_id, (c.domain.lower() if c.domain else c.company)) for c in candidates]
@@ -224,6 +264,9 @@ class Crustdata:
                         out[cid] = {**ctx, "lookup": ck, "cached": False}
                 used = hdr.get("x-credits-used")
                 credits = float(used) if used else COST.get(self.mode, 2.0) * matched
+                b = self._budget_load()
+                b["spent"] = round(float(b.get("spent", 0)) + credits, 4)
+                self._budget_save(b)
                 self.store.ledger("crustdata", f"company_{self.mode}:{kind}",
                                   credits * float(self.cfg.get("inr_per_credit", 0)),
                                   int((time.time() - t0) * 1000), credits=credits, records=len(chunk), matched=matched)
