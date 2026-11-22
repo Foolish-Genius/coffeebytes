@@ -37,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
     fu = sub.add_parser("ask", help="follow-up on a job: '500 units', 'require IP67', 'why Orbitrack?', 'proceed'")
     fu.add_argument("job")
     fu.add_argument("text")
+    rv = sub.add_parser("review", help="supply-chain review of a purchase-history CSV (no paid calls)")
+    rv.add_argument("--csv", type=Path, required=True)
     sub.add_parser("crustdata-balance", help="free GET /account/credits balance check (no credits used)")
     a = sub.add_parser("approve", help="human approval of RFQ drafts")
     a.add_argument("job")
@@ -67,6 +69,10 @@ def main(argv: list[str] | None = None) -> int:
         from .crustdata import Crustdata
         from .store import Store
         print(json.dumps({"credits": Crustdata(cfg.limits, Store(cfg.jobs_dir, "_account"), cfg.jobs_dir / "_cache").balance()}))
+        return 0
+    if args.cmd == "review":
+        from .review import load_rows, review
+        print(json.dumps(review(load_rows(args.csv), cfg), indent=2, ensure_ascii=False))
         return 0
     if args.cmd == "ask":
         job = Job(args.job, cfg)

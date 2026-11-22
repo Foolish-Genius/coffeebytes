@@ -3,4 +3,7 @@ buyer_requires_maker: true
 allowed_roles: [MAKER, BRAND_OWNER, AUTHORIZED_DISTRIBUTOR]   # TRADER allowed only if you add it here
                                         # (an authorized distributor keeps the maker's warranty; remove it to buy direct only)
 priority_order: [delivery_days, warranty_months, service_network, unit_price]
+review:                   # supply-chain review thresholds
+  price_rise_pct: 15
+  approval_expiry_warn_days: 180
 long_lead_time_days: 84   # quotes at/over this lead time get a "lock price / plan buffer" flag (inflation risk)

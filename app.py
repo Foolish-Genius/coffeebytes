@@ -49,6 +49,20 @@ if st.button("Run / resume", type="primary"):
     st.session_state["job_id"] = job_id
     Job(job_id, cfg).run(need, source)
 
+with st.expander("Supply-chain review: upload your purchase history (CSV)"):
+    st.caption("Columns: item, supplier, qty, unit_price, order_date [, category, manufacturer, lead_time_days]. "
+               "Rules only, no paid calls.")
+    up = st.file_uploader("Purchase history", type="csv")
+    if up is not None:
+        import csv as _csv, io as _io
+        from siliconscout.review import review as _review
+        rows = [{k.strip().lower(): (v or "").strip() for k, v in r.items() if k}
+                for r in _csv.DictReader(_io.StringIO(up.getvalue().decode("utf-8-sig")))]
+        rep = _review(rows, cfg)
+        st.write(f"{rep['lines']} lines, {rep['items']} items · high {rep['counts']['high']} · "
+                 f"medium {rep['counts']['medium']} · low {rep['counts']['low']}")
+        st.dataframe(rep["findings"], use_container_width=True)
+
 if "job_id" not in st.session_state:
     st.stop()
 job = Job(st.session_state["job_id"], cfg)
