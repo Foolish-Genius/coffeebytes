@@ -5,15 +5,11 @@ services:
   - type: web
     name: siliconscout
     runtime: docker
-    plan: starter            # persistent disks need a paid instance; free instances lose SQLite data on redeploy
+    plan: free               # free instance: no persistent disk, so SQLite data (users, credits) resets on every redeploy
     region: singapore
     branch: main
     autoDeploy: true
     healthCheckPath: /api/config
-    disk:
-      name: siliconscout-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: SS_JOBS_DIR
         value: /var/data/jobs
