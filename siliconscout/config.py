@@ -11,6 +11,19 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def load_dotenv(path: Path = ROOT / ".env") -> None:
+    """Read KEY=value lines from .env (gitignored) without overriding real env vars. No dependency."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            v = v.strip().strip('"').strip("'")
+            if v:
+                os.environ.setdefault(k.strip(), v)
+
+
 def _y(p: Path) -> dict:
     return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
 
@@ -29,6 +42,8 @@ class Config:
 
     @classmethod
     def load(cls, config_dir: Path | None = None, jobs_dir: Path | None = None) -> "Config":
+        if not os.environ.get("SS_NO_DOTENV"):
+            load_dotenv()
         d = Path(config_dir or os.environ.get("SS_CONFIG_DIR", ROOT / "config"))
         lane = _y(d / "lane.yaml")
         return cls(

@@ -20,6 +20,12 @@ with st.sidebar:
     job_id = st.text_input("Job id", value=st.session_state.get("job_id", uuid.uuid4().hex[:8]))
     source = st.selectbox("Discovery source", ["fixture", "registry"], help="fixture = demo data; registry = seed from approval lists")
     st.write(f"Mode: **{cfg.limits.get('mode')}**")
+    import os
+    llm_on = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    st.write(("🟢 Claude API connected" if llm_on else "⚪ Claude API not set (free rules-only mode)")
+             + f" · cap ₹{cfg.limits.get('max_inr_per_job')}/job")
+    st.write("🟢 Mouser live prices" if os.environ.get("MOUSER_API_KEY") else "⚪ Mouser not set (fixture prices)")
+    st.caption("Keys go in the .env file in the project folder (see .env.example). Restart the app after editing.")
 
 need = st.text_area("Operating need", "Need GPS trackers for 300 trucks, deliver to Pune")
 if st.button("Run / resume", type="primary"):
