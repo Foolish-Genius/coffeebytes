@@ -4,8 +4,52 @@
     {
       "name": "workbench",
       "runtimeExecutable": "py",
-      "runtimeArgs": ["-3.13", "-m", "streamlit", "run", "app.py", "--server.port", "8501", "--server.headless", "true", "--browser.gatherUsageStats", "false"],
+      "runtimeArgs": [
+        "-3.13",
+        "-m",
+        "streamlit",
+        "run",
+        "app.py",
+        "--server.port",
+        "8501",
+        "--server.headless",
+        "true",
+        "--browser.gatherUsageStats",
+        "false"
+      ],
       "port": 8501
+    },
+    {
+      "name": "web-branch",
+      "runtimeExecutable": "py",
+      "runtimeArgs": [
+        "-3.13",
+        "-m",
+        "uvicorn",
+        "api.main:create_app",
+        "--factory",
+        "--port",
+        "8000",
+        "--app-dir",
+        "C:/Users/ragha/AppData/Local/Temp/claude/d1a74cad53d7582b/098eb2df-c17f-4c96-a08f-3fe5f638d7f9/scratchpad/ss-web"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "web-redesign",
+      "runtimeExecutable": "py",
+      "runtimeArgs": [
+        "-3.13",
+        "-m",
+        "uvicorn",
+        "api.main:create_app",
+        "--factory",
+        "--port",
+        "8010",
+        "--app-dir",
+        "C:/Users/ragha/AppData/Local/Temp/claude/d1a74cad53d7582b/c8a2f76b-4199-4b51-92b9-a3415e188381/scratchpad/redesign"
+      ],
+      "port": 8010
     }
   ]
 }
