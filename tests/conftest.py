@@ -9,3 +9,6 @@ os.environ.pop("ANTHROPIC_API_KEY", None)
 os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 os.environ.pop("MOUSER_API_KEY", None)
 os.environ.pop("CRUSTDATA_API_KEY", None)  # Crustdata tests set a fake key and a mocked HTTP layer
+
+os.environ.setdefault("SS_WEB_FREE_CREDITS", "0")  # web tests assert a new account starts at 0
+

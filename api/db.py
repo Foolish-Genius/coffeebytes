@@ -13,9 +13,9 @@ import os
 
 
 def _free_credits() -> int:
-    """Starter credits for every new account (SS_WEB_FREE_CREDITS, default 0) so jobs run without Stripe."""
+    """Starter credits for every new account (SS_WEB_FREE_CREDITS, default 10) so jobs run without Stripe."""
     try:
-        return max(0, int(os.environ.get("SS_WEB_FREE_CREDITS", "0")))
+        return max(0, int(os.environ.get("SS_WEB_FREE_CREDITS", "10")))
     except ValueError:
         return 0
 
