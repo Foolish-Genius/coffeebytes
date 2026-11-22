@@ -9,6 +9,15 @@ import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+import os
+
+
+def _free_credits() -> int:
+    """Starter credits for every new account (SS_WEB_FREE_CREDITS, default 0) so jobs run without Stripe."""
+    try:
+        return max(0, int(os.environ.get("SS_WEB_FREE_CREDITS", "0")))
+    except ValueError:
+        return 0
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users(
@@ -93,7 +102,11 @@ class DB:
             cur = self.db.execute(
                 "INSERT INTO users(email,name,pw_hash,google_sub,created_at) VALUES(?,?,?,?,?)",
                 (email.strip().lower(), name, hash_password(pw) if pw else None, google_sub, now()))
-            return cur.lastrowid
+            uid = cur.lastrowid
+            free = _free_credits()
+            if free > 0:
+                self._apply(uid, free, "signup_bonus", "", "Free starter credits")
+            return uid
 
     def google_user(self, sub: str, email: str, name: str) -> int:
         """Find by Google sub, else link to an existing account with the same (Google-verified) email, else create."""
