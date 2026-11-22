@@ -29,19 +29,21 @@ def parse(text: str) -> tuple[str, str]:
     """Map a follow-up to (action, value) with rules. ('other', text) when nothing matches."""
     t = text.strip()
     low = t.lower()
-    if re.match(r"^(why|explain|what happened)", low):
-        return "explain", t
-    if low in ("skip", "proceed", "continue", "go ahead", "use assumptions"):
+    if re.match(r"^(why|explain|what|how|which|who|when|is|are|does|do|can)\b", low) or low.endswith("?"):
+        return "explain", t  # a question never changes the spec
+    if low.rstrip(".! ") in ("skip", "proceed", "continue", "go ahead", "use assumptions", "ok", "okay"):
         return "proceed", ""
-    m = re.search(r"\b(?:deliver(?:y)?\s+(?:to|in|at)|ship\s+to|location\s*(?:is|:)?)\s+([A-Za-z][A-Za-z ]{1,40})", t, re.I)
+    m = re.search(r"\b(?i:deliver(?:y)?\s+(?:to|in|at)|ship\s+to|location\s*(?:is|:)?)\s+"
+                  r"([A-Z][a-z]+(?:\s[A-Z][a-z]+)?|[a-z]+)", t)  # stop at the first lowercase word after the place
     if m:
         return "set_location", m.group(1).strip().title()
+    m = re.search(r"(\d[\d,]*)\s*(units?|pcs|pieces|nos|trucks|vehicles|devices|trackers|scanners|loggers)\b", low)
+    if m or re.match(r"^\s*(make it|quantity|qty)?\s*[:=]?\s*\d[\d,]*\s*$", low):
+        num = m.group(1) if m else re.search(r"\d[\d,]*", low).group(0)
+        return "set_quantity", num.replace(",", "")
     m = re.search(r"(?:require|must have|needs?|add|should have)\s+(.+)$", t, re.I)
     if m:
         return "add_requirement", m.group(1).strip().rstrip(".")
-    m = re.search(r"(\d[\d,]*)", t)
-    if m and re.search(r"\b(units?|pcs|pieces|trucks|vehicles|devices|make it|quantity|qty)\b|^\s*\d", low):
-        return "set_quantity", m.group(1).replace(",", "")
     lane_words = {"tracker": "trackers for vehicles", "vehicle": "vehicle trackers", "truck": "truck trackers",
                   "rfid": "RFID readers", "scanner": "barcode scanners", "temperature": "temperature loggers",
                   "logger": "temperature loggers"}

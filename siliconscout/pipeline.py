@@ -48,7 +48,7 @@ class Job:
         self.sender = sender or file_sender(self.store)
         self.crash_at = crash_at or os.environ.get("SS_KILL_AFTER")
         self.state = self.store.latest() or JobState(job_id=job_id)
-        self.state.extra.setdefault("started_at", time.time())
+        self.state.extra["started_at"] = time.time()  # time limit applies per run/turn, so follow-ups get a fresh budget
         self.deadline = self.state.extra["started_at"] + float(self.cfg.limits.get("max_job_seconds", 900))
         self.llm.deadline = self.crust.deadline = self.deadline
 

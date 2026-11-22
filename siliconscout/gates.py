@@ -106,6 +106,23 @@ def _find_sentence(pages, pred):
     return "", None
 
 
+LOOKALIKE = [set("0O"), set("1IL"), set("5S"), set("8B"), set("2Z")]
+
+
+def _model_typo(a: str, b: str) -> bool:
+    """Format-level ambiguity only: a dropped/added trailing suffix char, or ONE lookalike char (0/O, 1/I).
+    A different digit (140 vs 240, 1000 vs 1001) is a different model -> clear absence, FAIL."""
+    if not a or not b:
+        return False
+    if abs(len(a) - len(b)) == 1 and (a.startswith(b) or b.startswith(a)) and min(len(a), len(b)) >= 4:
+        longer = a if len(a) > len(b) else b
+        return not longer[-1].isdigit()  # a dropped suffix letter (NVT-140 vs NVT-140X), not a dropped digit
+    if len(a) == len(b):
+        diff = [(x, y) for x, y in zip(a, b) if x != y]
+        return len(diff) == 1 and any({*diff[0]} <= s for s in LOOKALIKE)
+    return False
+
+
 def _sim(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio() if a and b else 0.0
 
@@ -121,7 +138,7 @@ def _near_match(c: Candidate, snaps) -> Optional[tuple[RegistryHit, str]]:
             cs, ms = _sim(me, rc), _sim(mm, rm)
             if rm == mm and rc != me and cs >= 0.85:
                 why = f"company name '{c.company}' differs only slightly from registered '{row['company']}' (same model)"
-            elif rc == me and rm != mm and ms >= 0.8:
+            elif rc == me and rm != mm and _model_typo(mm, rm):
                 why = f"model '{c.model}' differs only slightly from registered '{row['model']}' for the same company"
             else:
                 continue
