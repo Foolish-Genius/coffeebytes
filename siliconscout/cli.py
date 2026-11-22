@@ -30,6 +30,11 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--source", choices=["fixture", "file", "registry"], default="fixture")
     r.add_argument("--candidates", type=Path, help="JSON list of live candidates with urls (source=file)")
     r.add_argument("--kill-after", help="simulate a crash after this stage (demo of restart safety)")
+    r.add_argument("--crustdata-spend", action="store_true", help="allow Crustdata credit spend for THIS run only")
+    cx = sub.add_parser("context", help="Crustdata: show the dry-run plan (no spend) or, with --spend, fetch")
+    cx.add_argument("job")
+    cx.add_argument("--spend", action="store_true", help="actually call Crustdata (spends credits, capped)")
+    sub.add_parser("crustdata-balance", help="free GET /account/credits balance check (no credits used)")
     a = sub.add_parser("approve", help="human approval of RFQ drafts")
     a.add_argument("job")
     a.add_argument("--rfq", default="all", help="'all' or comma-separated rfq ids")
@@ -55,8 +60,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "registry-import":
         print(import_csv(cfg.data_dir, args.name, args.csv, args.as_on, args.source_url, args.title))
         return 0
+    if args.cmd == "crustdata-balance":
+        from .crustdata import Crustdata
+        from .store import Store
+        print(json.dumps({"credits": Crustdata(cfg.limits, Store(cfg.jobs_dir, "_account"), cfg.jobs_dir / "_cache").balance()}))
+        return 0
+    if args.cmd == "context":
+        job = Job(args.job, cfg, crust_spend=args.spend or None)
+        plan = job.refresh_context()
+        print(json.dumps({k: v for k, v in plan.items()}, indent=2), file=sys.stderr)
+        _print(job)
+        return 0
     if args.cmd == "run":
-        job = Job(args.job or uuid.uuid4().hex[:8], cfg, crash_at=args.kill_after)
+        job = Job(args.job or uuid.uuid4().hex[:8], cfg, crash_at=args.kill_after,
+                  crust_spend=True if args.crustdata_spend else None)
         try:
             job.run(args.need, args.source, args.candidates)
         except Crash as e:

@@ -25,6 +25,7 @@ def to_output(job: Job) -> dict:
         } for a in st.assessments],
         "rfqs": [r.model_dump() for r in st.rfqs],
         "decision_summary": text,
+        "crustdata_plan": st.extra.get("crustdata_plan"),
         "cost": {"paid_calls": len(ledger),
                  "crustdata_credits": sum(r.get("credits", 0) for r in ledger if r.get("provider") == "crustdata"), "inr_estimate": round(sum(r.get("inr_estimate", 0) for r in ledger), 4),
                  "tokens_in": sum(r.get("tokens_in", 0) for r in ledger),

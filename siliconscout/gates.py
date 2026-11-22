@@ -82,7 +82,7 @@ def apply_company_context(a: Assessment, c: Candidate, ctx: Optional[dict], ig: 
         | {norm_company(h.brand) for h in a.registry_hits if h.brand}
     names.discard("")
     same = cn and any(cn == n or cn in n or n in cn for n in names)
-    by_domain = str(ctx.get("lookup", "")).startswith("domains:")
+    by_domain = ":domains:" in str(ctx.get("lookup", ""))
     src = f"Crustdata company record ({ctx.get('lookup')}, context only)"
     if cn and not same and by_domain:
         a.flags.append(f"Identity conflict: Crustdata says {c.domain} belongs to '{ctx.get('name')}', not '{c.company}'.")
@@ -97,7 +97,8 @@ def apply_company_context(a: Assessment, c: Candidate, ctx: Optional[dict], ig: 
     hc = ctx.get("headcount")
     tmax = int(cfg.limits.get("crustdata", {}).get("trader_headcount_max", 20))
     if hc is not None and hc <= tmax and "manufactur" in (c.listing_role or "").lower() and a.role != Role.MAKER:
-        a.flags.append(f"Trader-credibility signal: ~{hc} employees per Crustdata while claiming to manufacture (signal only).")
+        size = f"<= {hc} employees ({ctx.get('employee_count_range')})" if ctx.get("headcount_is_range") else f"~{hc} employees"
+        a.flags.append(f"Trader-credibility signal: {size} per Crustdata while claiming to manufacture (signal only).")
     country = (ctx.get("country") or "").lower()
     if country and country not in ("india", "ind", "in") and any(INDIA_RE.search(h.address) for h in a.registry_hits):
         a.flags.append(f"Context note: Crustdata HQ country '{ctx.get('country')}' differs from Indian registry address.")

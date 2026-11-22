@@ -24,7 +24,13 @@ with st.sidebar:
     llm_on = bool(os.environ.get("ANTHROPIC_API_KEY"))
     st.write(("🟢 Claude API connected" if llm_on else "⚪ Claude API not set (free rules-only mode)")
              + f" · cap ₹{cfg.limits.get('max_inr_per_job')}/job")
-    st.write("🟢 Crustdata company context" if os.environ.get("CRUSTDATA_API_KEY") else "⚪ Crustdata not set (no company context)")
+    cd = cfg.limits.get("crustdata", {})
+    if not os.environ.get("CRUSTDATA_API_KEY"):
+        st.write("⚪ Crustdata not set (no company context)")
+    elif cd.get("allow_spend"):
+        st.write(f"🟢 Crustdata live ({cd.get('mode')}, cap {cd.get('max_credits_per_job')} credits/job)")
+    else:
+        st.write(f"🔒 Crustdata key set, spend LOCKED (dry-run only, {cd.get('mode')} mode)")
     st.write("🟢 Mouser live prices" if os.environ.get("MOUSER_API_KEY") else "⚪ Mouser not set (fixture prices)")
     st.caption("Keys go in the .env file in the project folder (see .env.example). Restart the app after editing.")
 
@@ -46,6 +52,19 @@ c1.markdown(f"**Lane:** {out['lane']}  \n**Device:** {spec.get('device')}  \n**Q
             f"**Deliver to:** {spec.get('delivery_location') or 'UNKNOWN'}  \n**MPN:** {spec.get('mpn') or '-'}")
 c2.markdown("**Requirements:** " + ", ".join(spec.get("requirements", {}).values()) +
             "\n\n**Assumptions:**\n" + "\n".join(f"- {a}" for a in spec.get("assumptions", [])))
+
+plan = out.get("crustdata_plan")
+if plan:
+    if plan.get("spent"):
+        st.success(f"Crustdata {plan['mode']}: fetched {plan['to_send']} companies (see cost ledger for credits).")
+    elif plan.get("to_send"):
+        st.warning(f"Crustdata dry run: {plan['to_send']} companies would be sent to {plan['endpoint']}, "
+                   f"worst case {plan['worst_case_credits']} credits (cap {plan['cap_credits']}; {plan['cached_free']} cached, free). "
+                   "Nothing was sent.")
+        if st.checkbox(f"I approve spending up to {plan['worst_case_credits']} Crustdata credits for this job"):
+            if st.button("Fetch Crustdata context now"):
+                Job(st.session_state["job_id"], cfg, crust_spend=True).refresh_context()
+                st.rerun()
 
 st.subheader("Candidates (grouped by decision; no fake scores)")
 for c in out["candidates"]:

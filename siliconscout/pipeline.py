@@ -35,12 +35,13 @@ def file_sender(store: Store) -> Callable[[dict], None]:
 class Job:
     def __init__(self, job_id: str, cfg: Optional[Config] = None, today: Optional[date] = None,
                  sender: Optional[Callable[[dict], None]] = None, crash_at: Optional[str] = None,
-                 crust_post: Optional[Callable] = None):
+                 crust_http: Optional[Callable] = None, crust_spend: Optional[bool] = None):
         self.cfg = cfg or Config.load()
         self.store = Store(self.cfg.jobs_dir, job_id)
         self.regs = Registries(self.cfg.data_dir)
         self.llm = LLM(self.cfg.limits, self.store)
-        self.crust = Crustdata(self.cfg.limits, self.store, self.cfg.jobs_dir / "_cache", post=crust_post)
+        self.crust = Crustdata(self.cfg.limits, self.store, self.cfg.jobs_dir / "_cache", http=crust_http,
+                               allow_spend=crust_spend)
         self.today = today or date.today()
         self.sender = sender or file_sender(self.store)
         self.crash_at = crash_at or os.environ.get("SS_KILL_AFTER")
@@ -87,14 +88,35 @@ class Job:
 
     def _s_assess(self, *_) -> bool:
         llm = self._llm()
-        if "crustdata" not in self.state.extra:  # paid call: once per job, checkpointed, then cached across jobs
-            self.state.extra["crustdata"] = self.crust.enrich(self.state.candidates)
-            self.store.checkpoint(self.state)
-        ctx = self.state.extra["crustdata"]
-        self.state.assessments = rank([assess(c, self.state.spec, self.cfg, self.regs, self.store, self.today, llm,
-                                              ctx.get(c.candidate_id)) for c in self.state.candidates], self.cfg)
+        if "crustdata" not in self.state.extra:  # spend-locked by default; once per job, checkpointed, cached
+            self._fetch_context()
+        self._reassess(llm)
         self._commit("assess")
         return True
+
+    def _fetch_context(self) -> None:
+        self.state.extra["crustdata"] = self.crust.enrich(self.state.candidates)
+        self.state.extra["crustdata_plan"] = {k: v for k, v in self.crust.last_plan.items() if k != "batches"}
+        self.state.extra["crustdata_plan"]["spent"] = bool(self.crust.allow_spend and self.crust.last_plan.get("to_send"))
+        self.store.checkpoint(self.state)
+
+    def _reassess(self, llm=None) -> None:
+        ctx = self.state.extra.get("crustdata", {})
+        self.state.assessments = rank([assess(c, self.state.spec, self.cfg, self.regs, self.store, self.today, llm,
+                                              ctx.get(c.candidate_id)) for c in self.state.candidates], self.cfg)
+
+    def refresh_context(self) -> dict:
+        """Re-plan (and, only if spend is allowed, fetch) Crustdata context, then re-assess. RFQs untouched."""
+        self._fetch_context()
+        if self._done("assess"):
+            quotes = {q.candidate_id: q for q in self.state.quotes}
+            self._reassess(self._llm())
+            for a in self.state.assessments:
+                if a.candidate_id in quotes:
+                    apply_quote(a, quotes[a.candidate_id], self.state.spec, self.cfg)
+            self.state.assessments = rank(self.state.assessments, self.cfg)
+            self.store.checkpoint(self.state)
+        return self.crust.last_plan
 
     def _s_rfq_draft(self, *_) -> bool:
         emails = {c.candidate_id: c.email for c in self.state.candidates}
