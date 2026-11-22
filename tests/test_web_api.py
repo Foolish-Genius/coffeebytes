@@ -270,3 +270,21 @@ def test_google_link_drops_unverified_password(genv):
     google_login(c, "user-code")  # the real owner signs in with Google
     c.post("/api/auth/logout")
     assert c.post("/api/auth/login", json={"email": "user@example.com", "password": "correct horse"}).status_code == 401
+
+
+def test_follow_up_route(env):
+    c, gw = env
+    signup(c)
+    sid, _ = pay(c, gw)
+    c.post("/api/billing/confirm", json={"session_id": sid})
+    jid = c.post("/api/jobs", json={"need": NEED}).json()["job_id"]
+    r = c.post(f"/api/jobs/{jid}/follow_up", json={"text": "deliver to Chennai"})
+    from siliconscout.pipeline import Job
+    if hasattr(Job, "follow_up"):
+        assert r.status_code == 200 and "reply" in r.json() and "output" in r.json()
+    else:
+        assert r.status_code == 501
+    assert c.get("/api/me").json()["credits"] == 9  # follow-ups are free
+    c.post("/api/auth/logout")
+    signup(c, "other@example.com")
+    assert c.post(f"/api/jobs/{jid}/follow_up", json={"text": "x"}).status_code == 404

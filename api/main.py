@@ -61,6 +61,10 @@ class QuoteIn(BaseModel):
     validity_until: Optional[str] = Field(default=None, max_length=40)
 
 
+class FollowUpIn(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
 class CheckoutIn(BaseModel):
     pack: str
 
@@ -306,6 +310,20 @@ def create_app(cfg: Optional[Config] = None, db_path: Optional[Path] = None,
             except ValueError as e:
                 raise HTTPException(400, str(e))
             return view(jid)
+
+    @app.post("/api/jobs/{jid}/follow_up")
+    def follow_up(jid: str, body: FollowUpIn, u: dict = Depends(current_user)):
+        """Clarify / change the spec / ask why. Free: it continues an already-paid job."""
+        owned_job(jid, u)
+        with job_lock(jid):
+            job = make_job(jid)
+            if not hasattr(job, "follow_up"):
+                raise HTTPException(501, "Follow-up needs the newer engine (Job.follow_up), not merged yet.")
+            try:
+                reply = job.follow_up(body.text)
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+            return {"reply": reply, **view(jid)}
 
     # --- admin -----------------------------------------------------------------------------------
     @app.get("/api/admin/overview")
