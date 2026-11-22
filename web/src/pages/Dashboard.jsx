@@ -40,6 +40,11 @@ export default function Dashboard({ cfg, user, refreshUser }) {
 
   return (
     <div className="stack-lg">
+      <section className="landing">
+        <div className="eyebrow">AIS-140 sourcing for Indian logistics</div>
+        <h1 className="display">Whose model holds a government approval, and <em>who actually makes it.</em></h1>
+        <p className="lede">SiliconScout turns a plain need into a spec, checks the approval registries, separates makers from traders, and drafts RFQs that wait for your sign-off.</p>
+      </section>
       <section className="card hero">
         <h2>New sourcing job</h2>
         <p className="muted">Describe the operating need in plain words. SiliconScout derives the spec, checks the approval registries, and drafts RFQs for your approval.</p>

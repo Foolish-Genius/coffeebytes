@@ -11,11 +11,11 @@ const DECISIONS = [
   ["CANNOT_VERIFY", "Cannot verify", "Not enough evidence to decide either way."],
   ["NOT_A_FIT", "Not a fit", "Failed at least one hard gate; the reason and source are shown."],
 ];
-const SECTIONS = [["spec", "Spec"], ["candidates", "Candidates"], ["rfqs", "RFQs"], ["quote", "Quote intake"], ["decision", "Decision"], ["cost", "Cost & audit"]];
 
 export default function JobPage({ jobId, refreshUser }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
+  const [tab, setTab] = useState("results");
 
   const load = () => api(`/api/jobs/${jobId}`).then(setData).catch((e) => setErr(e.message));
   useEffect(() => { load(); }, [jobId]);
@@ -33,33 +33,90 @@ export default function JobPage({ jobId, refreshUser }) {
   const out = data.output;
   const update = (d) => setData((prev) => ({ ...prev, ...d }));
 
+  const cands = out.candidates || [];
+  const c = out.cost || {};
   return (
-    <div className="job">
-      <aside className="toc">
-        {SECTIONS.map(([id, t]) => <a key={id} href={`#/jobs/${jobId}`} onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); }}>{t}</a>)}
-      </aside>
-      <div className="stack-lg grow">
-        <section className="card job-head">
-          <div className="row between wrap">
-            <div>
-              <div className="muted mono">Job {out.job_id} · lane {out.lane || "—"} · {fmtTs(data.meta?.created_at)}</div>
-              <h2>{out.spec?.raw_need || data.meta?.need}</h2>
-            </div>
-            <StatusPill status={out.status} />
+    <div className="job stack-lg">
+      <section className="job-head">
+        <div className="eyebrow">Job {out.job_id} · lane {out.lane || "—"} · {fmtTs(data.meta?.created_at)}</div>
+        <div className="row between wrap">
+          <h1 className="job-title">{out.spec?.raw_need || data.meta?.need}</h1>
+          <StatusPill status={out.status} />
+        </div>
+        <div className="headline-stats">
+          <div><span>Candidates</span><b>{cands.length}</b></div>
+          <div><span>Ready for RFQ</span><b>{cands.filter((x) => ["QUALIFIED_FOR_RFQ", "RECOMMEND_ORDER"].includes(x.decision)).length}</b></div>
+          <div><span>Credits charged</span><b>{data.meta?.charged ?? "—"}</b></div>
+          <div><span>Engine cost</span><b>₹{(c.inr_estimate ?? 0).toLocaleString("en-IN")}</b></div>
+        </div>
+        {out.decision_summary && <div className={`summary ${out.status === "RECOMMEND_ORDER" ? "good" : ""}`}>{out.decision_summary}</div>}
+        {data.contract_errors?.length > 0 && (
+          <div className="alert warn">Output contract warnings: {data.contract_errors.join("; ")}</div>
+        )}
+        <div className="seg-tabs" role="tablist">
+          <button role="tab" aria-selected={tab === "results"} className={tab === "results" ? "on" : ""} onClick={() => setTab("results")}>Results</button>
+          <button role="tab" aria-selected={tab === "cost"} className={tab === "cost" ? "on" : ""} onClick={() => setTab("cost")}>Cost &amp; audit</button>
+        </div>
+      </section>
+      {tab === "results" ? (
+        <div className="job-grid">
+          <div className="stack-lg grow">
+            <SpecCard spec={out.spec || {}} lane={out.lane} />
+            <Candidates candidates={cands} />
+            <Rfqs jobId={jobId} rfqs={out.rfqs || []} candidates={cands} onUpdate={update} />
+            <QuoteIntake jobId={jobId} out={out} onUpdate={update} />
           </div>
-          {out.decision_summary && <div className={`summary ${out.status === "RECOMMEND_ORDER" ? "good" : ""}`}>{out.decision_summary}</div>}
-          {data.contract_errors?.length > 0 && (
-            <div className="alert warn">Output contract warnings: {data.contract_errors.join("; ")}</div>
-          )}
-        </section>
-        <SpecCard spec={out.spec || {}} lane={out.lane} />
-        <Candidates candidates={out.candidates || []} />
-        <Rfqs jobId={jobId} rfqs={out.rfqs || []} candidates={out.candidates || []} onUpdate={update} />
-        <QuoteIntake jobId={jobId} out={out} onUpdate={update} />
-        <Decision out={out} />
+          <aside className="stack-lg side">
+            <Decision out={out} />
+            <Thread jobId={jobId} out={out} onUpdate={update} />
+          </aside>
+        </div>
+      ) : (
         <CostAudit out={out} ledger={data.ledger || []} audit={data.audit || []} charged={data.meta?.charged} />
-      </div>
+      )}
     </div>
+  );
+}
+
+function Thread({ jobId, out, onUpdate }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [reply, setReply] = useState("");
+  const send = async (e) => {
+    e.preventDefault();
+    setBusy(true); setErr("");
+    try {
+      const r = await api(`/api/jobs/${jobId}/follow_up`, { method: "POST", body: { text } });
+      setReply(r.reply || ""); setText("");
+      const { reply: _r, ...rest } = r;
+      onUpdate(rest);
+    } catch (x) { setErr(x.message); } finally { setBusy(false); }
+  };
+  const qs = out.questions || [];
+  const th = out.thread || [];
+  return (
+    <section className="card" id="thread">
+      <h3>Follow-up</h3>
+      {qs.length > 0 && (
+        <div className="stack">
+          <div className="k-label">Clarifying questions</div>
+          {qs.map((q, i) => <div key={i} className="bubble q">{typeof q === "string" ? q : q.question || q.text || JSON.stringify(q)}</div>)}
+        </div>
+      )}
+      {th.length > 0 && (
+        <div className="stack" style={{ marginTop: ".8rem" }}>
+          {th.map((t, i) => <div key={i} className={`bubble ${t.role === "user" ? "me" : ""}`}><span className="k-label">{t.role || "turn"}</span>{t.text || t.content || t.need || JSON.stringify(t)}</div>)}
+        </div>
+      )}
+      {!qs.length && !th.length && <p className="muted small-text">No open questions. Follow-up turns for this job will appear here.</p>}
+      {reply && <div className="bubble" style={{ marginTop: ".8rem" }}>{reply}</div>}
+      <form onSubmit={send} className="stack" style={{ marginTop: ".8rem" }}>
+        <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder="Answer a question or ask a follow-up" maxLength={2000} required />
+        {err && <div className="alert error">{err}</div>}
+        <button className="primary" disabled={busy || !text.trim()}>{busy ? "Sending…" : "Send"}</button>
+      </form>
+    </section>
   );
 }
 

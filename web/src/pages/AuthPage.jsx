@@ -36,7 +36,7 @@ export default function AuthPage({ cfg, params, onAuthed }) {
     <div className="auth-wrap">
       <section className="auth-pitch">
         <div className="brand big"><span className="logo">S</span> SiliconScout <span className="ver">3.0</span></div>
-        <h1>Source AIS-140 trackers you can actually defend.</h1>
+        <h1 className="display">Source AIS-140 trackers you can <em>actually defend.</em></h1>
         <p>
           Directories tell you who says they make trackers. SiliconScout tells you whose model holds a government
           approval, who actually makes it, and drafts the RFQs for your sign-off.
