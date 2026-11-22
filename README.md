@@ -65,6 +65,10 @@ For frontend hot reload, run `npm run dev` in `web/` (port 5173, proxies `/api` 
 - **Crustdata.** Web jobs only do a dry-run plan (no credits spent) unless `SS_WEB_CRUSTDATA_SPEND=1`.
 - **RFQ "send".** It uses the engine's idempotent outbox. In this build that writes `.eml` files to `jobs/<id>/outbox/`, and no email leaves the machine.
 
+## Deploy (Render, auto-deploys on every push to main)
+
+`render.yaml` (Blueprint) and `Dockerfile` (React build + Python runtime) define one web service with a 1 GB persistent disk for the SQLite data. In Render, go to **New → Blueprint** and pick this repo. After that, every push or merge to `main` rebuilds and redeploys automatically (`autoDeploy: true`, `branch: main`). Secrets are entered in Render's dashboard, never in git: `PUBLIC_BASE_URL`, `ADMIN_EMAILS`, `GOOGLE_CLIENT_ID/SECRET`, `STRIPE_SECRET_KEY` (sk_test_ only), `STRIPE_WEBHOOK_SECRET`, `CRUSTDATA_API_KEY`, `ANTHROPIC_API_KEY`. After the first deploy, add `<PUBLIC_BASE_URL>/api/auth/google/callback` to the Google OAuth client's redirect URIs, and point a Stripe test-mode webhook (`checkout.session.completed`) at `<PUBLIC_BASE_URL>/api/stripe/webhook`. The disk needs a paid instance (Starter); on the free plan, users and credits would be wiped on every deploy.
+
 ## Data: fixtures vs. live
 
 All rows in `data/registries/*.csv` and `data/fixtures/*` are **fictional TEST_FIXTURE data**, used for the demo and the tests. At kickoff:

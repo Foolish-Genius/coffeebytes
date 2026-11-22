@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.git
+jobs/
+**/__pycache__/
+.pytest_cache/
+web/node_modules/
+web/dist/
+.claude/

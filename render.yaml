@@ -1,0 +1,35 @@
+# Render Blueprint. Connect this repo once in Render (New > Blueprint); after that every push to
+# main rebuilds and redeploys automatically. Secrets (sync: false) are entered in Render's dashboard,
+# never in git.
+services:
+  - type: web
+    name: siliconscout
+    runtime: docker
+    plan: starter            # persistent disks need a paid instance; free instances lose SQLite data on redeploy
+    region: singapore
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /api/config
+    disk:
+      name: siliconscout-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: SS_JOBS_DIR
+        value: /var/data/jobs
+      - key: PUBLIC_BASE_URL     # e.g. https://siliconscout.onrender.com (no trailing slash)
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: STRIPE_SECRET_KEY   # sk_test_ only; live keys are refused by the app
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: CRUSTDATA_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
