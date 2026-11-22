@@ -157,7 +157,10 @@ class Crustdata:
         cache, out = self._load(), {}
         want: dict[str, list[tuple[str, str]]] = {"domains": [], "names": []}
         for c in candidates:
-            kind, ident = ("domains", c.domain.lower()) if c.domain else ("names", c.company)
+            # reserved/test TLDs (RFC 2606) are rejected by Crustdata with a 400 -> look up by name instead
+            skip = self.cfg.get("skip_tlds", ["example", "test", "invalid", "localhost"])
+            good_domain = c.domain and c.domain.lower().rsplit(".", 1)[-1] not in skip
+            kind, ident = ("domains", c.domain.lower()) if good_domain else ("names", c.company)
             ck = f"{self.mode}:{kind}:{ident.lower()}"
             if ck in cache and self._fresh(cache[ck]):
                 out[c.candidate_id] = {**cache[ck]["ctx"], "lookup": ck, "cached": True}
@@ -221,16 +224,15 @@ class Crustdata:
             self.store.audit("crustdata_spend_blocked", reason="global budget exhausted", **plan["budget"])
             return out
         cache = self._load()
-        ids = {(k, ident): cid for k in plan["batches"] for cid, ident in
-               [(c.candidate_id, (c.domain.lower() if c.domain else c.company)) for c in candidates]
-               if ident in plan["batches"][k]}
+        ids = {(k, ident): c.candidate_id for k in plan["batches"] for c in candidates
+               for ident in (c.domain.lower(), c.company) if ident and ident in plan["batches"][k]}
+        result = {"ok_requests": 0, "failed_requests": 0, "matched": 0, "credits": 0.0, "errors": []}
+        self.last_plan["result"] = result
         timeout = int(self.cfg.get("timeout_s", 20))
         for kind, idents in plan["batches"].items():
             for i in range(0, len(idents), BATCH):
                 chunk = idents[i:i + BATCH]
-                body: dict = {kind: chunk}
-                if kind == "domains":
-                    body["exact_match"] = True
+                body: dict = {kind: chunk, "exact_match": True}  # domains: exact primary domain; names: exact name
                 if self.mode == "enrich":
                     body["fields"] = self.cfg.get("fields", ["basic_info", "locations", "headcount"])
                 t0 = time.time()
@@ -241,16 +243,29 @@ class Crustdata:
                         self.store.audit("crustdata_rate_limited", wait_s=wait)
                         time.sleep(wait)
                         status, data, hdr = self.http("POST", f"/company/{self.mode}", body, self.key, timeout)
+                    if status == 400 and kind == "domains":  # drop the domains it names as invalid, retry the rest once
+                        msg = str(((data or {}).get("error") or {}).get("message", "")) if isinstance(data, dict) else ""
+                        bad = {d.strip().lower() for d in msg.split(":", 1)[-1].split(",")} if "Invalid company domains" in msg else set()
+                        rest = [d for d in chunk if d not in bad]
+                        if bad and rest:
+                            self.store.audit("crustdata_invalid_domains_dropped", dropped=sorted(bad))
+                            chunk, body[kind] = rest, rest
+                            status, data, hdr = self.http("POST", f"/company/{self.mode}", body, self.key, timeout)
                 except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
                     self.store.audit("crustdata_error", kind=kind, error=self._scrub(str(e))[:200])
+                    result["failed_requests"] += 1
+                    result["errors"].append(type(e).__name__)
                     continue
                 if status != 200:
-                    self.store.audit("crustdata_http_error", status=status,
-                                     error=self._scrub(json.dumps(data))[:300] if data else "")
+                    err = self._scrub(json.dumps(data))[:300] if data else ""
+                    self.store.audit("crustdata_http_error", status=status, error=err)
+                    result["failed_requests"] += 1
+                    result["errors"].append(f"HTTP {status}: {err[:160]}")
                     if status in (401, 402, 403):  # bad key / no credits / not allowed: stop, never retry
                         self._save(cache)
                         return out
                     continue
+                result["ok_requests"] += 1
                 matched = 0
                 for ident, row in zip(chunk, data if isinstance(data, list) else []):
                     m = sorted(row.get("matches") or [], key=lambda x: -(x.get("confidence_score") or 0))
@@ -267,6 +282,8 @@ class Crustdata:
                 b = self._budget_load()
                 b["spent"] = round(float(b.get("spent", 0)) + credits, 4)
                 self._budget_save(b)
+                result["matched"] += matched
+                result["credits"] = round(result["credits"] + credits, 4)
                 self.store.ledger("crustdata", f"company_{self.mode}:{kind}",
                                   credits * float(self.cfg.get("inr_per_credit", 0)),
                                   int((time.time() - t0) * 1000), credits=credits, records=len(chunk), matched=matched)

@@ -20,15 +20,15 @@
       "claims": []
     },
     {
-      "candidate_id": "c04", "company": "Trackon Telematics Pvt Ltd", "domain": "trackon.example", "model": "TT-AIS9",
-      "listing_role": "manufacturer", "email": "sales@trackon.example",
-      "pages": [{"url": "https://trackon.example/tt-ais9", "text": "Trackon Telematics Pvt Ltd manufactures the TT-AIS9 at Electronic City, Bengaluru. TT-AIS9 features GPS + NavIC positioning, 4G LTE with 2G fallback, an emergency button and an IP66 enclosure. Service centres in 15 states across India."}],
+      "candidate_id": "c04", "company": "Trackovo Telematics Pvt Ltd", "domain": "trackovo.example", "model": "TT-AIS9",
+      "listing_role": "manufacturer", "email": "sales@trackovo.example",
+      "pages": [{"url": "https://trackovo.example/tt-ais9", "text": "Trackovo Telematics Pvt Ltd manufactures the TT-AIS9 at Electronic City, Bengaluru. TT-AIS9 features GPS + NavIC positioning, 4G LTE with 2G fallback, an emergency button and an IP66 enclosure. Service centres in 15 states across India."}],
       "claims": []
     },
     {
-      "candidate_id": "c05", "company": "Trakon Telematics", "domain": "trakon-telematics.example", "model": "TT-AIS9",
-      "listing_role": "manufacturer", "email": "deals@trakon-telematics.example",
-      "pages": [{"url": "https://trakon-telematics.example/", "text": "Trakon Telematics is a leading manufacturer of the TT-AIS9 AIS-140 tracker. GPS + NavIC, 4G LTE, panic button, IP67. Lowest prices in India."}],
+      "candidate_id": "c05", "company": "Trakovo Telematics", "domain": "trakovo-telematics.example", "model": "TT-AIS9",
+      "listing_role": "manufacturer", "email": "deals@trakovo-telematics.example",
+      "pages": [{"url": "https://trakovo-telematics.example/", "text": "Trakovo Telematics is a leading manufacturer of the TT-AIS9 AIS-140 tracker. GPS + NavIC, 4G LTE, panic button, IP67. Lowest prices in India."}],
       "claims": []
     },
     {

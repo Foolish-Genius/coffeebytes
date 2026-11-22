@@ -47,7 +47,34 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setenv("CRUSTDATA_API_KEY", FAKE_KEY)
     c = Config.load(jobs_dir=tmp_path)
     c.limits["crustdata"]["max_credits_per_job"] = 5
+    c.limits["crustdata"]["skip_tlds"] = []  # fixture domains are .example; let the mock treat them as real
     return c
+
+
+def test_reserved_domains_go_by_name_and_400_drops_bad_domains(tmp_path, monkeypatch):
+    monkeypatch.setenv("CRUSTDATA_API_KEY", FAKE_KEY)
+    c = Config.load(jobs_dir=tmp_path)
+    api = FakeAPI()
+    run(c, api, "names", spend=True)  # default skip_tlds: .example -> names lookup, never rejected
+    body = api.spend_calls()[0]["body"]
+    assert "names" in body and "domains" not in body and body["exact_match"] is True
+
+    class Reject(FakeAPI):
+        def __call__(self, method, path, body, key, timeout):
+            if path != "/account/credits" and "bad.example" in (body.get("domains") or []):
+                self.calls.append({"method": method, "path": path, "body": body, "key": key})
+                return 400, {"error": {"type": "invalid_request", "message": "Invalid company domains: bad.example"}}, {}
+            return super().__call__(method, path, body, key, timeout)
+    from siliconscout.crustdata import Crustdata
+    from siliconscout.models import Candidate
+    from siliconscout.store import Store
+    api2 = Reject()
+    cd = Crustdata({"crustdata": {"allow_spend": True, "skip_tlds": [], "max_credits_per_job": 5}},
+                   Store(tmp_path, "r"), tmp_path / "_c", http=api2)
+    out = cd.enrich([Candidate(candidate_id="a", company="Navyug", domain="navyug-telematics.example"),
+                     Candidate(candidate_id="b", company="Bad", domain="bad.example")])
+    assert len(api2.spend_calls()) == 2 and api2.spend_calls()[1]["body"]["domains"] == ["navyug-telematics.example"]
+    assert out["a"]["matched"] and cd.last_plan["result"]["ok_requests"] == 1
 
 
 def run(cfg, api, job_id="cd1", spend=None):

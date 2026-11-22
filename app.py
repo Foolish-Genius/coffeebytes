@@ -17,7 +17,9 @@ st.caption("Directories tell you who says they make trackers. We tell you whose 
 
 cfg = Config.load()
 with st.sidebar:
-    job_id = st.text_input("Job id", value=st.session_state.get("job_id", uuid.uuid4().hex[:8]))
+    if "default_job" not in st.session_state:  # stable default: a fresh uuid each rerun reset typed ids
+        st.session_state["default_job"] = st.session_state.get("job_id", uuid.uuid4().hex[:8])
+    job_id = st.text_input("Job id", value=st.session_state["default_job"], key="job_input")
     source = st.selectbox("Discovery source", ["fixture", "registry"], help="fixture = demo data; registry = seed from approval lists")
     st.write(f"Mode: **{cfg.limits.get('mode')}**")
     import os
@@ -55,9 +57,16 @@ c2.markdown("**Requirements:** " + ", ".join(spec.get("requirements", {}).values
 
 plan = out.get("crustdata_plan")
 if plan:
-    if plan.get("spent"):
-        st.success(f"Crustdata {plan['mode']}: fetched {plan['to_send']} companies (see cost ledger for credits).")
-    elif plan.get("to_send"):
+    res = plan.get("result") or {}
+    if res:
+        msg = (f"Crustdata {plan['mode']}: sent {plan['to_send']} companies in {res.get('ok_requests', 0) + res.get('failed_requests', 0)} "
+               f"request(s) · matched {res.get('matched', 0)} · {res.get('credits', 0)} credits used")
+        if plan.get("budget"):
+            msg += f" · budget left {plan['budget']['remaining']} of {plan['budget']['limit']}"
+        (st.success if res.get("ok_requests") else st.error)(msg)
+        for e in res.get("errors", []):
+            st.caption(f"Crustdata error: {e}")
+    elif plan.get("to_send") and not cfg.limits.get("crustdata", {}).get("allow_spend"):
         st.warning(f"Crustdata dry run: {plan['to_send']} companies would be sent to {plan['endpoint']}, "
                    f"worst case {plan['worst_case_credits']} credits (cap {plan['cap_credits']}; {plan['cached_free']} cached, free). "
                    "Nothing was sent.")

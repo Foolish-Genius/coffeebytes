@@ -97,7 +97,8 @@ class Job:
     def _fetch_context(self) -> None:
         self.state.extra["crustdata"] = self.crust.enrich(self.state.candidates)
         self.state.extra["crustdata_plan"] = {k: v for k, v in self.crust.last_plan.items() if k != "batches"}
-        self.state.extra["crustdata_plan"]["spent"] = bool(self.crust.allow_spend and self.crust.last_plan.get("to_send"))
+        res = self.crust.last_plan.get("result") or {}
+        self.state.extra["crustdata_plan"]["spent"] = bool(res.get("ok_requests"))
         self.store.checkpoint(self.state)
 
     def _reassess(self, llm=None) -> None:
