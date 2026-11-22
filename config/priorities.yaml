@@ -1,0 +1,4 @@
+# Buyer preferences. Order qualified candidates by these keys, in order. Price never overrides a gate.
+buyer_requires_maker: true
+allowed_roles: [MAKER, BRAND_OWNER]     # TRADER allowed only if you add it here
+priority_order: [delivery_days, warranty_months, service_network, unit_price]

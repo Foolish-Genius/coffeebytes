@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "required": ["job_id", "status", "spec", "lane", "candidates", "rfqs", "decision_summary", "cost"],
+  "properties": {
+    "job_id": {"type": "string"},
+    "status": {"type": "string"},
+    "lane": {"type": "string"},
+    "spec": {"type": "object", "required": ["device", "quantity", "assumptions", "requirements"]},
+    "candidates": {"type": "array", "items": {"type": "object", "required": ["candidate_id", "company", "decision", "role", "gates"]}},
+    "rfqs": {"type": "array", "items": {"type": "object", "required": ["rfq_id", "candidate_id", "status"]}},
+    "decision_summary": {"type": "string"},
+    "cost": {"type": "object", "required": ["paid_calls", "inr_estimate"]}
+  }
+}

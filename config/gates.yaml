@@ -1,0 +1,23 @@
+# Gate policy. Only facts public records can settle are hard gates.
+# on_unknown: blocks_rfq | provisional | never_failure
+gates:
+  entity_identity:   {hard: true,  on_unknown: blocks_rfq,    settled_by: "domain + registry name + address match"}
+  supplier_role:     {hard: true,  on_unknown: blocks_rfq_if_maker_required, settled_by: "registry address, official site, distributor list"}
+  legal_approval:    {hard: true,  on_unknown: fail,          settled_by: "registry file with as-on date"}
+  spec_match:        {hard: false, on_unknown: provisional,   settled_by: "datasheet or official page, verbatim passage"}
+  geography:         {hard: false, on_unknown: provisional,   settled_by: "official site, registry address"}
+  capacity:          {hard: false, on_unknown: never_failure, settled_by: "supplier reply only"}
+  price_lead_stock:  {hard: false, on_unknown: never_failure, settled_by: "quote or distributor API only"}
+
+decision_order: [RECOMMEND_ORDER, QUALIFIED_FOR_RFQ, PROVISIONAL, HOLD_FOR_REVIEW, CANNOT_VERIFY, NOT_A_FIT]
+
+# Text in fetched pages that tries to instruct the agent. Logged, never obeyed.
+injection_patterns:
+  - "ignore (all |any )?(previous|prior|above) instructions"
+  - "rank (us|this|[a-z ]+) (first|#1|top)"
+  - "(you are|as) an? (ai|llm|language model|agent)"
+  - "system prompt"
+  - "disregard .{0,40}(rules|instructions)"
+
+# Words on a supplier site that indicate resale rather than manufacture.
+trader_markers: ["authorized dealer", "authorised dealer", "we resell", "reseller", "we deal in", "dealer of", "trading company", "distributor of", "multi-brand", "multiple brands"]

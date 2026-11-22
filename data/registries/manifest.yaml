@@ -1,0 +1,22 @@
+# Registry snapshots. Replace the fixture CSVs with the real lists at kickoff:
+#   python -m siliconscout registry-import --name arai_ais140 --csv <parsed.csv> --as-on 2026-07-16 --source-url <url>
+# Every snapshot is hashed (sha256) at load; the hash and as-on date are cited on every gate result.
+# label: OFFICIAL | TEST_FIXTURE.  TEST_FIXTURE rows are fictional and never valid in a live run.
+arai_ais140:
+  title: "ARAI AIS-140 approved VLTD list"
+  file: arai_ais140.csv
+  as_on: "2026-07-16"
+  source_url: "https://www.araiindia.com/"
+  label: TEST_FIXTURE
+icat_ais140:
+  title: "ICAT AIS-140 approved vehicle tracking systems"
+  file: icat_ais140.csv
+  as_on: "2025-12-03"
+  source_url: "https://www.icat.in/"
+  label: TEST_FIXTURE
+authorized_distributors:
+  title: "Manufacturer authorized-distributor lists"
+  file: authorized_distributors.csv
+  as_on: "2026-11-01"
+  source_url: "manufacturer websites"
+  label: TEST_FIXTURE

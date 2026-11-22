@@ -1,0 +1,13 @@
+{
+  "_label": "TEST_FIXTURE - fictional part and distributors",
+  "parts": {
+    "FSC-MCU100A": {
+      "manufacturer": "Fictiva Semiconductor",
+      "offers": [
+        {"distributor": "Distributor Alpha", "stock": 12000, "packaging": "Tray", "pack_multiple": 250, "currency": "INR", "price_breaks": [[1, 182.0], [250, 151.5], [1000, 138.0]], "lead_time_days": 3},
+        {"distributor": "Distributor Gamma", "stock": 400, "packaging": "Cut tape", "pack_multiple": 1, "currency": "INR", "price_breaks": [[1, 176.0], [100, 160.0]], "lead_time_days": 5},
+        {"distributor": "Broker Beta", "stock": 50000, "packaging": "Reel", "pack_multiple": 1000, "currency": "INR", "price_breaks": [[1, 95.0]], "lead_time_days": 2}
+      ]
+    }
+  }
+}

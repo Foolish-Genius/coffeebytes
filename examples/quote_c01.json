@@ -1,0 +1,16 @@
+{
+  "candidate_id": "c01",
+  "label": "SUPPLIER_QUOTE",
+  "currency": "INR",
+  "unit_price": 7450,
+  "quantity": 300,
+  "moq": 50,
+  "approval_ref": "TAC-ARAI-F0001",
+  "model": "NVT-140X",
+  "warranty_months": 24,
+  "service_network": "22 states",
+  "delivery_days": 21,
+  "payment_terms": "30% advance, 70% on delivery",
+  "validity_until": "2026-12-31",
+  "gst_pct": 18
+}

@@ -1,0 +1,74 @@
+# Lane definitions. Edit here (not code) for the hour-3 requirement change.
+# required_fields: each field is a spec requirement checked against verbatim page passages.
+#   patterns: regex that, if found in a fetched page sentence, supports the field (PASS)
+#   contradict: regex that contradicts the field (FAIL)
+lanes:
+  A_FLEET:
+    title: "Fleet tracking (AIS-140 VLTD)"
+    device: "AIS-140 vehicle location tracking device (VLTD)"
+    keywords: [tracker, trackers, tracking, vltd, gps, fleet, truck, trucks, vehicle, vehicles, ais-140, ais 140, telematics]
+    unit_words: [trucks, vehicles, units, devices, trackers, pcs, nos]
+    registries: [arai_ais140, icat_ais140]
+    registry_rule: any          # either list passes
+    legal_required: true
+    assumptions:
+      - "Vehicles are Indian-registered commercial vehicles, so an AIS-140 approved VLTD is legally required (MoRTH)."
+      - "One tracking device per vehicle."
+      - "4G with 2G fallback preferred over 2G-only for coverage longevity."
+    required_fields:
+      gps_navic: {label: "GPS + NavIC", patterns: ["navic", "irnss"]}
+      cellular_4g: {label: "4G (2G fallback)", patterns: ["\\b4g\\b", "lte"], contradict: ["2g[- ]only"]}
+      panic_button: {label: "Panic button", patterns: ["panic button", "emergency button", "sos button"]}
+      ip_rating: {label: "IP65 or better", patterns: ["ip6[5-9]"], contradict: ["ip[0-5][0-9]\\b"]}
+  B_WAREHOUSE:
+    title: "Warehouse ID (RFID / scanners)"
+    device: "RFID reader/tags or handheld barcode scanner"
+    keywords: [rfid, barcode, scanner, scanners, handheld, tag, tags, reader, readers, warehouse]
+    unit_words: [scanners, readers, tags, units, devices, pcs, nos]
+    registries: []              # BIS CRS notification to be confirmed at kickoff; until then no registry gate
+    registry_rule: any
+    legal_required: false
+    assumptions:
+      - "CRS notification status for this category is unconfirmed; treated as no registry gate until checked."
+    required_fields:
+      frequency: {label: "UHF 865-867 MHz (India band)", patterns: ["865", "867 ?mhz"]}
+      ruggedness: {label: "Rugged (IP54+ / drop rated)", patterns: ["ip5[4-9]", "ip6[0-9]", "drop"]}
+  C_COLDCHAIN:
+    title: "Cold chain loggers"
+    device: "Temperature/humidity data logger"
+    keywords: [temperature, humidity, logger, loggers, cold chain, cold-chain, reefer, sensor, sensors]
+    unit_words: [loggers, sensors, units, devices, pcs, nos]
+    registries: []
+    registry_rule: any
+    legal_required: false
+    assumptions:
+      - "No mandatory registry assumed; calibration certificate required as evidence."
+    required_fields:
+      accuracy: {label: "Accuracy +/-0.5 C or better", patterns: ["[±+]/?-? ?0\\.[1-5] ?°?c"]}
+      calibration: {label: "Calibration certificate", patterns: ["calibration certificate", "nabl"]}
+  D_COMPONENT:
+    title: "Standard components (authorized channel)"
+    device: "Standard ET component by exact manufacturer part number"
+    keywords: [component, components, part number, mpn, reel, cut tape, ic, ics, capacitor, resistor, connector, microcontroller]
+    unit_words: [pcs, units, nos, pieces, reels]
+    registries: []
+    registry_rule: any
+    legal_required: false
+    assumptions:
+      - "Exact manufacturer part number is binding; no alternates."
+      - "Buy only from the manufacturer's authorized distributors."
+    required_fields: {}
+  GENERIC:
+    title: "Generic (no registry exists)"
+    device: "Unclassified ET device"
+    keywords: []
+    unit_words: [units, devices, pcs, nos]
+    registries: []
+    registry_rule: any
+    legal_required: false
+    assumptions:
+      - "Request is outside lanes A-D: no government registry exists for this category; official-site evidence only."
+    required_fields: {}
+
+# Tokens that look like part numbers but are standards, never MPNs.
+not_mpn: ["AIS-140", "AIS140", "IP65", "IP66", "IP67", "IP68", "IS-16046"]
